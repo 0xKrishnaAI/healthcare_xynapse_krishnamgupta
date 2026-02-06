@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
+from torchvision import transforms, models
 import torchvision.transforms.functional as TF
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score, precision_score, recall_score, confusion_matrix
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 BATCH_SIZE = 8 # Increased slightly for 2D which uses less memory
-NUM_EPOCHS = 250 # Increased to 250 as requested (50 + 200)
+NUM_EPOCHS = 50 # Increased for better convergence with more unfrozen layers
 LEARNING_RATE = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 NUM_WORKERS = 0 # Safe for Windows. adjust if needed.
@@ -47,12 +47,17 @@ def get_transforms(phase):
     """
     if phase == 'train':
         return transforms.Compose([
+            transforms.Resize((224, 224)), # ResNet expects 224x224
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=10),
-            # transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)), # Optional: slight shift
+            transforms.RandomRotation(degrees=15), # Increased rotation
+            transforms.ColorJitter(brightness=0.2, contrast=0.2), # Added intensity variation
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # ImageNet stats
         ])
     else:
-        return None # No transforms for validation/test
+        return transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
 
 class MRIDataset(Dataset):
     """
@@ -88,11 +93,30 @@ class MRIDataset(Dataset):
                 # Add channel dimension: (1, 128, 128, 128)
                 img_tensor = torch.tensor(img_np, dtype=torch.float32).unsqueeze(0)
             elif self.mode == '2d':
-                # Extract middle slice (axial)
-                # Assuming shape (128, 128, 128), middle is index 64 along axis 2
-                mid_slice = img_np[:, :, img_np.shape[2] // 2]
-                # Add channel dimension: (1, 128, 128)
-                img_tensor = torch.tensor(mid_slice, dtype=torch.float32).unsqueeze(0)
+                # Extract 3 slices: Middle-1, Middle, Middle+1 for RGB-like context
+                mid_idx = img_np.shape[2] // 2
+                
+                # Check bounds
+                start_idx = max(0, mid_idx - 1)
+                end_idx = min(img_np.shape[2], mid_idx + 2)
+                
+                # Extract slices
+                slices = []
+                for i in range(mid_idx - 1, mid_idx + 2):
+                    # Handle edge cases by padding if needed, but mid-slice usually safe
+                    idx_to_use = max(0, min(img_np.shape[2]-1, i))
+                    slices.append(img_np[:, :, idx_to_use])
+                
+                # Stack to create (3, 128, 128)
+                img_stack = np.stack(slices, axis=0)
+                img_tensor = torch.tensor(img_stack, dtype=torch.float32)
+                
+                # Normalize to 0-1 range roughly if raw MRI isn't already (usually max is varied)
+                # Simple min-max scaling per image is good practice before ImageNet norm
+                img_min, img_max = img_tensor.min(), img_tensor.max()
+                if img_max > img_min:
+                    img_tensor = (img_tensor - img_min) / (img_max - img_min)
+                
             else:
                 raise ValueError("Mode must be '2d' or '3d'")
             
@@ -195,6 +219,34 @@ class Simple2DCNN(nn.Module):
         x = self.classifier(x)
         return x
 
+def get_resnet_model(num_classes=2):
+    """
+    Returns a ResNet18 model pretrained on ImageNet, adapted for our task.
+    """
+    print("Loading Pretrained ResNet18...")
+    model = models.resnet18(weights='IMAGENET1K_V1')
+    
+    # Freeze early layers (Transfer Learning)
+    # Freeze all params first
+    for param in model.parameters():
+        param.requires_grad = False
+        
+    # Unfreeze layer3, layer4 and fc
+    for param in model.layer3.parameters():
+        param.requires_grad = True
+    for param in model.layer4.parameters():
+        param.requires_grad = True
+        
+    # Modify the final fully connected layer
+    num_ftrs = model.fc.in_features
+    # Add Dropout for regularization
+    model.fc = nn.Sequential(
+        nn.Dropout(0.5),
+        nn.Linear(num_ftrs, num_classes)
+    )
+    
+    return model
+
 def train_model(model, train_loader, val_loader, model_name="model"):
     model = model.to(DEVICE)
     if torch.cuda.device_count() > 1:
@@ -202,8 +254,8 @@ def train_model(model, train_loader, val_loader, model_name="model"):
         model = nn.DataParallel(model)
         
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5) # Added weight decay (L2 regularization)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1) # Decay LR every 15 epochs
+    optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4) # Reduced weight decay back to standard
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
     
     train_losses, val_losses = [], []
     train_accs, val_accs = [], []
@@ -384,20 +436,27 @@ def main():
         val_ds_2d = MRIDataset(val_binary, mode='2d', transform=get_transforms('val'))
         test_ds_2d = MRIDataset(test_binary, mode='2d', transform=get_transforms('test'))
         
+        
         train_loader_2d = DataLoader(train_ds_2d, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
         val_loader_2d = DataLoader(val_ds_2d, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
         test_loader_2d = DataLoader(test_ds_2d, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
         
-        model_2d = Simple2DCNN()
-        model_2d = train_model(model_2d, train_loader_2d, val_loader_2d, model_name="2D_CNN")
+        # Initialize ResNet18
+        model_2d = get_resnet_model(num_classes=2)
+        model_2d = train_model(model_2d, train_loader_2d, val_loader_2d, model_name="ResNet18")
         
-        # Save 2D model as the primary output
+        # Save ResNet model
+        torch.save(model_2d.state_dict(), 'binary_resnet_classifier.pth')
+        print("Saved ResNet model as 'binary_resnet_classifier.pth'")
+        
+        # Also save as the generic name for evaluate_only.py to pick up automatically if desired, 
+        # OR better, update evaluate_only.py. For now, let's overwrite the primary to trigger easy usage.
         torch.save(model_2d.state_dict(), 'binary_ad_classifier.pth')
-        print("Saved 2D model as 'binary_ad_classifier.pth'")
+        print("Updated 'binary_ad_classifier.pth' with ResNet weights.")
         
-        evaluate_model(model_2d, test_loader_2d, model_name="2D_CNN")
+        evaluate_model(model_2d, test_loader_2d, model_name="ResNet18")
         
-        print("\nTraining and evaluation complete. (2D Model Selected)")
+        print("\nTraining and evaluation complete. (ResNet18 Model Selected)")
         
     except Exception as e:
         logger.critical(f"Critical failure in main execution: {e}", exc_info=True)

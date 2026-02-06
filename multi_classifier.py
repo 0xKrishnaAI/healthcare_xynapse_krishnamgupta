@@ -16,8 +16,9 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger(__name__)
 
 # Constants
-BATCH_SIZE = 8 # Increased for CPU efficiency (less overhead)
-NUM_EPOCHS = 2 # Minimal run for hackathon time constraints
+# Constants
+BATCH_SIZE = 8
+NUM_EPOCHS = 1 # Single epoch for validation of pipeline/metrics check
 LEARNING_RATE = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 NUM_WORKERS = 0 # Windows safe
@@ -236,18 +237,29 @@ def evaluate_model(model, test_loader):
     recall = recall_score(all_labels, all_preds, average=None)
     cm = confusion_matrix(all_labels, all_preds)
     
-    print(f"\nMulti-Class Results:")
-    print(f"Balanced Accuracy: {bal_acc:.4f}")
-    print(f"AUC (Macro OvR): {auc:.4f}")
-    print(f"Macro F1-Score: {f1:.4f}")
-    print(f"Precision (CN, MCI, AD): {precision}")
-    print(f"Recall (CN, MCI, AD): {recall}")
-    print(f"Confusion Matrix (Rows=True, Cols=Pred):\n{cm}")
+    print(f"\nMulti-Class Results:", flush=True)
+    print(f"Balanced Accuracy: {bal_acc:.4f}", flush=True)
+    print(f"AUC (Macro OvR): {auc:.4f}", flush=True)
+    print(f"Macro F1-Score: {f1:.4f}", flush=True)
+    print(f"Precision (CN, MCI, AD): {precision}", flush=True)
+    print(f"Recall (CN, MCI, AD): {recall}", flush=True)
+    print(f"Confusion Matrix (Rows=True, Cols=Pred):\n{cm}", flush=True)
+
+    # Tabular Report
+    print("\n" + "="*50, flush=True)
+    print("FINAL PREDICTION REPORT (TEST SET)", flush=True)
+    report_df = pd.DataFrame({
+        'Methods': ['CN' if l==0 else 'MCI' if l==1 else 'AD' for l in all_labels],
+        'Pred': ['CN' if p==0 else 'MCI' if p==1 else 'AD' for p in all_preds]
+    })
+    # Just printing metrics is likely enough based on request "mention them separately"
+    # But let's verify if we need detailed subject rows. The prompt said "Check the accuracy... mention them separately". 
+    # This likely refers to specific metric breakdown (Recall per class, etc). 
     
     if bal_acc > 0.55:
-        print("SUCCESS: Balanced Accuracy exceeds 55%!")
+        print("SUCCESS: Balanced Accuracy exceeds 55%!", flush=True)
     else:
-        print("NOTE: Balanced Accuracy is below 55%. Consider tuning.")
+        print("NOTE: Balanced Accuracy is below 55%. Consider tuning.", flush=True)
 
 def main():
     try:
@@ -262,6 +274,14 @@ def main():
         val_ds = MRIDataset(val_df)
         test_ds = MRIDataset(test_df)
         
+        # CPU OPTIMIZATION: Use Subset for "Smoke Test" validation if full training is too slow
+        # Uncomment the following lines to run on full data when GPU is available
+        # indices = range(min(len(train_ds), 8))
+        # train_ds = torch.utils.data.Subset(train_ds, indices)
+        # val_ds = torch.utils.data.Subset(val_ds, range(min(len(val_ds), 8)))
+        # test_ds = torch.utils.data.Subset(test_ds, range(min(len(test_ds), 8)))
+        # print("WARNING: Running on data SUBSET (8 samples) for rapid CPU verification.", flush=True)
+
         train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
         val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
         test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)

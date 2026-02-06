@@ -1,4 +1,4 @@
-from binary_classifier import Simple2DCNN, MRIDataset, evaluate_model, DEVICE, filter_and_remap
+from binary_classifier import get_resnet_model, MRIDataset, evaluate_model, DEVICE, filter_and_remap, get_transforms
 from torch.utils.data import DataLoader
 import torch
 import pandas as pd
@@ -13,11 +13,12 @@ def main():
     test_binary = filter_and_remap(test_df)
     
     # Ensure order is preserved for tabular report
-    test_ds = MRIDataset(test_binary, mode='2d')
+    # Use 'get_transforms' for validation/test to ensure normalization matches ResNet training
+    test_ds = MRIDataset(test_binary, mode='2d', transform=get_transforms('test'))
     test_loader = DataLoader(test_ds, batch_size=4, shuffle=False)
     
     print(f"Loading model from binary_ad_classifier.pth...", flush=True)
-    model = Simple2DCNN()
+    model = get_resnet_model(num_classes=2)
     # Load model (map_location ensures it loads on CPU if CUDA not available)
     model.load_state_dict(torch.load('binary_ad_classifier.pth', map_location=DEVICE))
     model.to(DEVICE)
