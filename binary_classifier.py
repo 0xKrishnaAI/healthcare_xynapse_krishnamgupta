@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger(__name__)
 
 # Constants
-BATCH_SIZE = 8 # Increased slightly for 2D which uses less memory
-NUM_EPOCHS = 50 # Increased for better convergence with more unfrozen layers
+BATCH_SIZE = 4 # Per Master Prompt: optimized for memory
+NUM_EPOCHS = 5 # Reduced for practical training time (can increase later)
 LEARNING_RATE = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 NUM_WORKERS = 0 # Safe for Windows. adjust if needed.
@@ -418,45 +418,37 @@ def main():
         
         print(f"Binary Dataset Sizes: Train={len(train_binary)}, Val={len(val_binary)}, Test={len(test_binary)}")
         
-        # ---------------------------------------------------------
-        # 3D Model Execution (SKIPPED/REMOVED as per user request to pivot to 2D)
-        # ---------------------------------------------------------
-        # Legacy 3D code removed for cleanliness. 
-        # Refer to git history or separate file if needed.
         
         # ---------------------------------------------------------
-        # 2D Model Execution (PRIMARY)
+        # 3D Model Execution (Master Prompt Specification)
         # ---------------------------------------------------------
         print("\n" + "="*30)
-        print("Running 2D CNN Pipeline (PRIMARY)")
+        print("Running 3D CNN Pipeline (Master Prompt)")
         print("="*30)
         
-        # Apply transforms only to training set
-        train_ds_2d = MRIDataset(train_binary, mode='2d', transform=get_transforms('train'))
-        val_ds_2d = MRIDataset(val_binary, mode='2d', transform=get_transforms('val'))
-        test_ds_2d = MRIDataset(test_binary, mode='2d', transform=get_transforms('test'))
+        # Create 3D datasets (no transforms for 3D)
+        train_ds_3d = MRIDataset(train_binary, mode='3d')
+        val_ds_3d = MRIDataset(val_binary, mode='3d')
+        test_ds_3d = MRIDataset(test_binary, mode='3d')
         
+        # Smaller batch size for 3D (memory intensive)
+        BATCH_SIZE_3D = 2
+        train_loader_3d = DataLoader(train_ds_3d, batch_size=BATCH_SIZE_3D, shuffle=True, num_workers=NUM_WORKERS)
+        val_loader_3d = DataLoader(val_ds_3d, batch_size=BATCH_SIZE_3D, shuffle=False, num_workers=NUM_WORKERS)
+        test_loader_3d = DataLoader(test_ds_3d, batch_size=BATCH_SIZE_3D, shuffle=False, num_workers=NUM_WORKERS)
         
-        train_loader_2d = DataLoader(train_ds_2d, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
-        val_loader_2d = DataLoader(val_ds_2d, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
-        test_loader_2d = DataLoader(test_ds_2d, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+        # Initialize Simple3DCNN (Master Prompt specification)
+        model_3d = Simple3DCNN()
+        model_3d = train_model(model_3d, train_loader_3d, val_loader_3d, model_name="Simple3DCNN")
         
-        # Initialize ResNet18
-        model_2d = get_resnet_model(num_classes=2)
-        model_2d = train_model(model_2d, train_loader_2d, val_loader_2d, model_name="ResNet18")
+        # Save 3D model
+        torch.save(model_3d.state_dict(), 'binary_ad_classifier.pth')
+        print("Saved 3D CNN model as 'binary_ad_classifier.pth'")
         
-        # Save ResNet model
-        torch.save(model_2d.state_dict(), 'binary_resnet_classifier.pth')
-        print("Saved ResNet model as 'binary_resnet_classifier.pth'")
+        evaluate_model(model_3d, test_loader_3d, model_name="Simple3DCNN")
         
-        # Also save as the generic name for evaluate_only.py to pick up automatically if desired, 
-        # OR better, update evaluate_only.py. For now, let's overwrite the primary to trigger easy usage.
-        torch.save(model_2d.state_dict(), 'binary_ad_classifier.pth')
-        print("Updated 'binary_ad_classifier.pth' with ResNet weights.")
+        print("\nTraining and evaluation complete. (Simple3DCNN - Master Prompt)")
         
-        evaluate_model(model_2d, test_loader_2d, model_name="ResNet18")
-        
-        print("\nTraining and evaluation complete. (ResNet18 Model Selected)")
         
     except Exception as e:
         logger.critical(f"Critical failure in main execution: {e}", exc_info=True)
