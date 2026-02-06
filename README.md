@@ -1,13 +1,16 @@
-# 🧠 MRI Preprocessing Pipeline for Alzheimer's Classification
+# 🧠 MRI Preprocessing Pipeline for Neurological Disorder Classification
 
-Deep learning-ready preprocessing for T1-weighted MRI brain scans to classify **CN** (Cognitively Normal), **MCI** (Mild Cognitive Impairment), and **AD** (Alzheimer's Disease).
+Deep learning-ready preprocessing for T1-weighted MRI brain scans to classify neurological conditions:
+- **CN** (Cognitively Normal) — Healthy brain function
+- **MCI** (Mild Cognitive Impairment) — Early-stage cognitive decline  
+- **AD** (Alzheimer's Disease) — Diagnosed dementia
 
 ## 🚀 Quick Start
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/hackathon.git
-cd hackathon
+git clone https://github.com/0xKrishnaAI/healthcare_xynapse_krishnamgupta.git
+cd healthcare_xynapse_krishnamgupta
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -23,15 +26,14 @@ python preprocess_engine.py
 ## 📁 Project Structure
 
 ```
-hackathon/
-├── preprocess_engine.py    # Main preprocessing pipeline (576 lines)
+├── preprocess_engine.py       # Main preprocessing pipeline
 ├── convert_dicom_to_nifti.py  # DICOM to NIfTI converter (optional)
-├── requirements.txt        # Python dependencies
-├── clinical_example.csv    # Example input format
-├── MNI152_T1_2mm.nii.gz   # MNI152 template for registration
+├── requirements.txt           # Python dependencies
+├── clinical_example.csv       # Example input format
+├── MNI152_T1_2mm.nii.gz      # MNI152 template for registration
 └── data/
-    ├── raw/               # Place your .nii.gz MRI scans here
-    └── processed/         # Preprocessed outputs (auto-generated)
+    ├── raw/                   # Place your .nii.gz MRI scans here
+    └── processed/             # Preprocessed outputs (auto-generated)
 ```
 
 ## 🔬 Preprocessing Pipeline
@@ -43,7 +45,7 @@ hackathon/
 | 3 | Skull Stripping | Deep learning brain extraction (ANTsPyNet) |
 | 4 | MNI152 Registration | Standardize anatomical coordinates (SyNOnly) |
 | 5 | Tissue Segmentation | 3-class Atropos (CSF, GM, WM) |
-| 6 | Grey Matter Isolation | Extract GM for AD biomarker analysis |
+| 6 | Grey Matter Isolation | Extract GM for neurological biomarker analysis |
 | 7 | Intensity Normalization | Min-max scaling to [0,1] |
 | 8 | Resampling | Uniform 128×128×128 voxels |
 
@@ -52,9 +54,9 @@ hackathon/
 **clinical.csv** (required):
 ```csv
 subject_id,label
-136_S_0300,AD
-136_S_0196,CN
-136_S_0579,MCI
+SUBJECT_001,CN
+SUBJECT_002,MCI
+SUBJECT_003,AD
 ```
 
 **MRI files**: Place as `data/raw/{subject_id}.nii.gz`
@@ -72,6 +74,14 @@ subject_id,label
 - ✅ **Consistency Checks**: Verifies output shapes and values
 - ✅ **Research-Backed**: ADNI-aligned preprocessing steps
 
+## 🏷️ Classification Labels
+
+| Label | Condition | Description |
+|-------|-----------|-------------|
+| CN | Cognitively Normal | No cognitive impairment |
+| MCI | Mild Cognitive Impairment | Memory/cognitive problems beyond normal aging |
+| AD | Alzheimer's Disease | Progressive neurodegenerative disorder |
+
 ## 📋 Requirements
 
 - Python 3.8+
@@ -86,4 +96,4 @@ subject_id,label
 
 ---
 
-**Built for Hackathon 2026** 🏆
+**Built for Healthcare Hackathon 2026** 🏆
