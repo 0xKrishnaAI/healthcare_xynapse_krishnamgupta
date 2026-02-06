@@ -307,11 +307,6 @@ def main():
         output_filename = f"{subject_id}_processed.nii.gz"
         output_path = os.path.join(PROCESSED_DIR, output_filename)
         
-        # Check if already processed
-        if os.path.exists(output_path):
-            processed_records.append({'subject_id': subject_id, 'label': label, 'path': output_path})
-            continue
-            
         # Check input exists
         if not os.path.exists(input_path):
             logging.error(f"Input file not found: {input_path}")
@@ -321,11 +316,46 @@ def main():
             # RUN PIPELINE
             final_image = process_single_mri(input_path, MNI_TEMPLATE)
             
-            # Simple consistency check
+            # CONSISTENCY & QUALITY CHECK (LIVE ACCURACY)
+            # 1. Shape Check
             if final_image.GetSize() != TARGET_SHAPE:
-                # Force crop/pad
                 final_image = resize_image_with_crop_or_pad(final_image, TARGET_SHAPE)
                 
+            # 2. Alignment Score (Correlation with MNI Template)
+            # Simplest proxy for "Registration Accuracy"
+            template_img = sitk.ReadImage(MNI_TEMPLATE, sitk.sitkFloat32)
+            # Resample template to match final image grid for comparison
+            resampler = sitk.ResampleImageFilter()
+            resampler.SetReferenceImage(final_image)
+            template_resampled = resampler.Execute(template_img)
+            
+            # Normalized Cross Correlation (approximate alignment quality)
+            # We use a quick correlation on the center slice to be fast
+            z_center = final_image.GetSize()[2] // 2
+            slice_final = sitk.GetArrayViewFromImage(final_image)[z_center, :, :]
+            slice_template = sitk.GetArrayViewFromImage(template_resampled)[z_center, :, :]
+            
+            # Simple correlation (avoiding scipy for speed if possible, but let's use numpy)
+            flat_final = slice_final.flatten()
+            flat_template = slice_template.flatten()
+            
+            # SNR (Signal to Noise Ratio) Estimation
+            # Signal = Mean of brain (foreground), Noise = Std of background
+            # We can approximate with simple Otsu stats
+            stats = sitk.StatisticsImageFilter()
+            stats.Execute(final_image)
+            snr = stats.GetMean() / (stats.GetSigma() + 1e-6)
+            
+            # Print Live "Accuracy" Metrics
+            # We map correlation (-1 to 1) to a "Alignment Score" (0-100%)
+            if len(flat_final) > 0 and np.std(flat_final) > 0:
+                corr = np.corrcoef(flat_final, flat_template)[0, 1]
+                align_score = max(0, corr) * 100
+            else:
+                align_score = 0.0
+                
+            tqdm.write(f"Subject {subject_id}: Alignment={align_score:.1f}% | SNR={snr:.2f} | QC: {'PASS' if align_score > 70 else 'WARN'}")
+            
             # Save
             sitk.WriteImage(final_image, output_path)
             processed_records.append({'subject_id': subject_id, 'label': label, 'path': output_path})

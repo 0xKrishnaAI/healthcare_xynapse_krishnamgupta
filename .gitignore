@@ -4,6 +4,7 @@ data/raw/MRI_extracted/
 data/raw/MRI.zip
 data/raw/archive*.zip
 data/processed/*.nii.gz
+binary_ad_classifier_3d.pth
 
 # Keep directory structure
 !data/raw/.gitkeep
