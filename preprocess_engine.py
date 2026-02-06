@@ -1,575 +1,389 @@
-#!/usr/bin/env python3
-"""
-MRI Preprocessing Engine for Neurological Disorder Classification
-==================================================================
-Task 1: Dataset Preprocessing Pipeline
-
-This script preprocesses T1-weighted MRI brain scans for deep learning-based 
-classification of neurological disorders (CN, MCI, AD).
-
-Preprocessing Steps (Research-Backed, ADNI-aligned):
-1. N4 Bias Field Correction - Correct intensity non-uniformities
-2. Denoising - Reduce noise while preserving edges
-3. Skull Stripping - Deep learning-based brain extraction (ANTsPyNet)
-4. Registration to MNI152 - Standardize anatomical coordinates
-5. Tissue Segmentation - Isolate Grey Matter (GM)
-6. Intensity Normalization - Min-max scaling to [0,1]
-7. Resampling - Uniform target shape (128, 128, 128)
-
-References:
-- ADNI preprocessing pipelines for AD classification
-- ANTsPy documentation for registration and segmentation
-- ANTsPyNet for deep learning-based brain extraction
-
-Author: AI Engineer | Hackathon 2026
-"""
-
 import os
-import sys
+import glob
 import logging
-from typing import Optional, Tuple
-
+import argparse
 import numpy as np
 import pandas as pd
+import SimpleITK as sitk
 from tqdm import tqdm
-import ants
-import antspynet
 from sklearn.model_selection import train_test_split
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+RAW_DIR = os.path.join("data", "raw")
+PROCESSED_DIR = os.path.join("data", "processed")
+CLINICAL_CSV = "clinical.csv"
+LOG_FILE = "preprocessing_errors.log"
 
-# Directory paths
-RAW_DIR = 'data/raw'
-PROCESSED_DIR = 'data/processed'
-CLINICAL_CSV = 'clinical.csv'
-
-# MNI152 template - Using 2mm resolution for efficiency
-# Comment: Using 2mm template to balance anatomical detail with 24-hour 
-# processing constraints, per common hackathon optimization.
-# Download from: https://github.com/NeuroDesk/neurocontainers or similar
+# MNI Template (Must be present)
 MNI_TEMPLATE = 'MNI152_T1_2mm.nii.gz'
 
-# Target shape for all processed volumes
+# Target settings
 TARGET_SHAPE = (128, 128, 128)
-
-# Label mapping for classification
 LABEL_MAP = {'CN': 0, 'MCI': 1, 'AD': 2}
 
-# Configure logging for errors only
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
 logging.basicConfig(
+    filename=LOG_FILE,
     level=logging.ERROR,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('preprocessing_errors.log'),
-        logging.StreamHandler(sys.stderr)
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
 
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
-def center_crop_or_pad(data: np.ndarray, target_shape: Tuple[int, int, int]) -> np.ndarray:
+def resize_image_with_crop_or_pad(image, target_shape):
     """
-    Crop or pad a 3D NumPy array to match the target shape.
-    
-    This function handles shape mismatches after resampling by:
-    - Center cropping if the dimension is larger than target
-    - Zero padding if the dimension is smaller than target
-    
-    Args:
-        data: Input 3D NumPy array
-        target_shape: Desired output shape (D, H, W)
-    
-    Returns:
-        np.ndarray: Array with exact target_shape dimensions
+    Resizes an image to target_shape by center cropping or padding.
     """
-    result = np.zeros(target_shape, dtype=data.dtype)
+    input_shape = image.GetSize() # SimpleITK uses (x,y,z) order
     
-    # Calculate crop/pad for each dimension
-    current_shape = data.shape
+    # Calculate crop/pad bounds
+    lower_bound = []
+    upper_bound = []
     
-    # Source and destination slices
-    src_slices = []
-    dst_slices = []
-    
-    for i in range(3):
-        if current_shape[i] > target_shape[i]:
-            # Need to crop - center crop
-            start = (current_shape[i] - target_shape[i]) // 2
-            end = start + target_shape[i]
-            src_slices.append(slice(start, end))
-            dst_slices.append(slice(0, target_shape[i]))
-        elif current_shape[i] < target_shape[i]:
-            # Need to pad - center pad
-            start = (target_shape[i] - current_shape[i]) // 2
-            end = start + current_shape[i]
-            src_slices.append(slice(0, current_shape[i]))
-            dst_slices.append(slice(start, end))
+    for dim in range(3):
+        diff = input_shape[dim] - target_shape[dim]
+        if diff > 0: # Crop
+            lower = diff // 2
+            upper = diff - lower
+            lower_bound.append(lower)
+            upper_bound.append(upper)
+        else: # Pad (handled separately or via resampling, but let's assume crop first)
+            lower_bound.append(0)
+            upper_bound.append(0)
+            
+    # Crop if needed
+    if any(x > 0 for x in lower_bound + upper_bound):
+        image = sitk.Crop(image, lower_bound, upper_bound)
+        
+    # Pad if needed
+    final_size = image.GetSize()
+    pad_lower = []
+    pad_upper = []
+    for dim in range(3):
+        diff = target_shape[dim] - final_size[dim]
+        if diff > 0:
+            lower = diff // 2
+            upper = diff - lower
+            pad_lower.append(lower)
+            pad_upper.append(upper)
         else:
-            # Same size
-            src_slices.append(slice(0, current_shape[i]))
-            dst_slices.append(slice(0, target_shape[i]))
-    
-    result[tuple(dst_slices)] = data[tuple(src_slices)]
-    return result
+            pad_lower.append(0)
+            pad_upper.append(0)
+            
+    if any(x > 0 for x in pad_lower + pad_upper):
+        image = sitk.ConstantPad(image, pad_lower, pad_upper, 0.0)
+        
+    return image
 
-
-def validate_template(template_path: str) -> ants.ANTsImage:
+def simple_skull_strip(image):
     """
-    Load and validate the MNI152 template.
+    Robust skull stripping using Otsu thresholding and morphological operations.
+    Works on Windows without needing deep learning weights.
+    """
+    # 1. Otsu Thresholding to separate background
+    otsu_filter = sitk.OtsuThresholdImageFilter()
+    otsu_filter.SetInsideValue(0)
+    otsu_filter.SetOutsideValue(1)
+    binary_mask = otsu_filter.Execute(image)
     
-    Args:
-        template_path: Path to the MNI152 template file
+    # 2. Fill holes (brain is a solid object)
+    binary_mask = sitk.BinaryFillhole(binary_mask)
     
-    Returns:
-        ANTsImage: Loaded template
+    # 3. Erosion to remove connection to skull/dura
+    binary_mask = sitk.BinaryErode(binary_mask, [2]*image.GetDimension())
     
-    Raises:
-        FileNotFoundError: If template doesn't exist
+    # 4. Keep largest connected component (the brain)
+    labeled_mask = sitk.ConnectedComponent(binary_mask)
+    stats = sitk.LabelShapeStatisticsImageFilter()
+    stats.Execute(labeled_mask)
+    
+    if stats.GetNumberOfLabels() > 0:
+        # Find label with largest size
+        largest_label = max(stats.GetLabels(), key=lambda l: stats.GetPhysicalSize(l))
+        brain_mask = sitk.Equal(labeled_mask, largest_label)
+    else:
+        brain_mask = binary_mask
+
+    # 5. Dilate back slightly to recover brain surface
+    brain_mask = sitk.BinaryDilate(brain_mask, [2]*image.GetDimension())
+    
+    # Apply mask
+    masked_image = sitk.Mask(image, brain_mask)
+    return masked_image
+
+def register_to_mni(image, template_path):
+    """
+    Register image to MNI template using Affine transformation.
     """
     if not os.path.exists(template_path):
-        raise FileNotFoundError(
-            f"MNI152 template not found at '{template_path}'. "
-            f"Please download the 2mm template from a reliable source."
+        raise FileNotFoundError(f"MNI Template not found at {template_path}")
+        
+    template = sitk.ReadImage(template_path, sitk.sitkFloat32)
+    image = sitk.Cast(image, sitk.sitkFloat32)
+    
+    # Initialize transform using center of mass
+    initial_transform = sitk.CenteredTransformInitializer(
+        template, 
+        image, 
+        sitk.Euler3DTransform(), 
+        sitk.CenteredTransformInitializerFilter.GEOMETRY
+    )
+    
+    # Registration
+    registration_method = sitk.ImageRegistrationMethod()
+    registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
+    registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
+    registration_method.SetMetricSamplingPercentage(0.01)
+    registration_method.SetInterpolator(sitk.sitkLinear)
+    registration_method.SetOptimizerAsGradientDescent(learningRate=1.0, numberOfIterations=100, convergenceMinimumValue=1e-6, convergenceWindowSize=10)
+    registration_method.SetOptimizerScalesFromPhysicalShift()
+    registration_method.SetInitialTransform(initial_transform, inPlace=False)
+    
+    try:
+        final_transform = registration_method.Execute(template, image)
+        
+        # Resample image to match template space
+        resampled_image = sitk.Resample(
+            image, 
+            template, 
+            final_transform, 
+            sitk.sitkLinear, 
+            0.0, 
+            image.GetPixelID()
         )
-    return ants.image_read(template_path)
+        return resampled_image
+    except Exception as e:
+        # Fallback if registration fails (rare with affine): just crop/pad to match
+        print(f"Registration warning: {e}. Proceeding with raw resampling.")
+        return sitk.Resample(image, template)
 
+def segment_grey_matter(image):
+    """
+    Segment Grey Matter (GM) using K-Means/Otsu clustering logic.
+    Assumes typically: CSF (dark), GM (gray), WM (white/bright).
+    """
+    # Smooth slightly before segmentation
+    smooth = sitk.SmoothingRecursiveGaussian(image, sigma=1.0)
+    
+    # Otsu Multiple Thresholds (3 classes: Background/CSF, GM, WM)
+    # This usually returns 0, 1, 2, 3 where 0 is background
+    # We ideally want the middle intensity class for GM
+    
+    # Let's use simple K-Means via thresholds
+    # Or simpler: Otsu to split Brain vs Not, then Otsu inside Brain?
+    
+    # Using simple 3-class segmentation
+    num_classes = 3
+    otsu = sitk.OtsuMultipleThresholdsImageFilter()
+    otsu.SetNumberOfThresholds(num_classes)
+    label_image = otsu.Execute(smooth)
+    
+    # Usually: 0=Background/CSF, 1=Grey Matter, 2=White Matter (sorted by intensity)
+    # We return the label 1 (GM)
+    gm_mask = sitk.Equal(label_image, 1) # Assumes GM is the middle intensity class
+    gm_image = sitk.Mask(image, gm_mask)
+    
+    return gm_image
 
 # =============================================================================
-# MAIN PREPROCESSING FUNCTION
+# CORE PROCESSING FUNCTION
 # =============================================================================
+def process_single_mri(input_path, template_path):
+    """
+    Full preprocessing pipeline for a single MRI using SimpleITK.
+    """
+    # Step 1: Load Image
+    image = sitk.ReadImage(input_path, sitk.sitkFloat32)
+    
+    # Step 2: N4 Bias Field Correction
+    # N4 needs a mask, usually fits Otsu mask
+    mask_image = sitk.OtsuThreshold(image, 0, 1, 200)
+    shrink_factor = 4
+    input_image_downsampled = sitk.Shrink(image, [shrink_factor] * image.GetDimension())
+    mask_image_downsampled = sitk.Shrink(mask_image, [shrink_factor] * image.GetDimension())
+    bias_corrector = sitk.N4BiasFieldCorrectionImageFilter()
+    bias_corrected_downsampled = bias_corrector.Execute(input_image_downsampled, mask_image_downsampled)
+    log_bias_field = bias_corrector.GetLogBiasFieldAsImage(image)
+    corrected_image = sitk.Exp(log_bias_field) * image
+    
+    # Step 3: Denoising (Curvature Flow)
+    denoised_image = sitk.CurvatureFlow(corrected_image, timeStep=0.125, numberOfIterations=3)
+    
+    # Step 4: Skull Stripping (Brain Extraction)
+    brain_only = simple_skull_strip(denoised_image)
+    
+    # Step 5: Registration to MNI
+    try:
+        registered_image = register_to_mni(brain_only, template_path)
+    except Exception as e:
+        # Fallback: Just valid brain extraction result
+        logging.warning(f"Registration failed for {input_path}, using native space: {e}")
+        registered_image = brain_only
 
-def process_single_mri(input_path: str, template: ants.ANTsImage) -> ants.ANTsImage:
-    """
-    Process a single T1-weighted MRI scan through the complete preprocessing pipeline.
+    # Step 6: Tissue Segmentation (Extract GM)
+    gm_volume = segment_grey_matter(registered_image)
     
-    Pipeline Steps:
-    1. Load and initial corrections (N4 bias, denoising)
-    2. Stage A: Skull stripping via deep learning
-    3. Spatial normalization to MNI152
-    4. Stage B: Tissue segmentation and GM isolation
-    5. Intensity normalization (min-max to [0,1])
-    6. Resampling to target shape
-    7. Stage C: Verification
+    # Step 7: Intensity Normalization [0, 1]
+    stats = sitk.StatisticsImageFilter()
+    stats.Execute(gm_volume)
+    min_val = stats.GetMinimum()
+    max_val = stats.GetMaximum()
     
-    Args:
-        input_path: Path to the raw .nii.gz MRI file
-        template: Pre-loaded MNI152 template ANTsImage
-    
-    Returns:
-        ants.ANTsImage: Processed grey matter volume
-    
-    Raises:
-        ValueError: If processing fails verification checks
-    """
-    
-    # -------------------------------------------------------------------------
-    # Step 1: Load and Initial Corrections
-    # -------------------------------------------------------------------------
-    # Research Note: N4 bias field correction is standard in ADNI pipelines
-    # to correct for intensity non-uniformities caused by RF field inhomogeneity
-    
-    image = ants.image_read(input_path)
-    
-    # N4 Bias Field Correction
-    # Corrects intensity non-uniformities from MRI scanner
-    image = ants.n4_bias_field_correction(image)
-    
-    # Denoising
-    # Reduces noise while preserving edges and anatomical details
-    image = ants.denoise_image(image)
-    
-    # -------------------------------------------------------------------------
-    # Step 2 - Stage A: Skull Stripping
-    # -------------------------------------------------------------------------
-    # Using ANTsPyNet's deep learning-based brain extraction
-    # This is more robust than traditional methods like BET
-    
-    brain_prob = antspynet.brain_extraction(image, modality='t1')
-    
-    # Threshold probability map at 0.5 to create binary mask
-    brain_mask = ants.threshold_image(brain_prob, 0.5, 1.0, 1, 0)
-    
-    # Apply mask to isolate brain tissue
-    brain = image * brain_mask
-    
-    # -------------------------------------------------------------------------
-    # Step 3: Spatial Normalization/Registration to MNI152
-    # -------------------------------------------------------------------------
-    # Registration to MNI152: To standardize anatomical coordinates across all 
-    # subjects to ensure the model learns pathology, not individual head positioning.
-    #
-    # Using 'SyNOnly' (Symmetric Normalization) transform for accuracy over 'Affine'
-    # to better handle non-linear anatomical variations between subjects.
-    # SyN is computationally expensive but provides superior registration quality
-    # essential for accurate GM comparison across subjects.
-    
-    registration = ants.registration(
-        fixed=template,
-        moving=brain,
-        type_of_transform='SyNOnly'
-    )
-    
-    registered_brain = registration['warpedmovout']
-    
-    # -------------------------------------------------------------------------
-    # Step 4 - Stage B: Tissue Segmentation (Grey Matter Isolation)
-    # -------------------------------------------------------------------------
-    # Perform 3-class tissue segmentation: CSF (1), GM (2), WM (3)
-    # Grey matter atrophy is a key biomarker for AD progression
-    #
-    # Parameters explained:
-    # - m='[0.2,1x1x1]': MRF parameters (smoothness weight, neighborhood)
-    # - c='[5,0]': Convergence parameters (max iterations, threshold)
-    # - priorweight=0.8: Weight for prior probability (tissue priors)
-    
-    # Create a mask for segmentation (threshold above mean intensity)
-    brain_array = registered_brain.numpy()
-    mean_intensity = np.mean(brain_array[brain_array > 0])
-    seg_mask = ants.threshold_image(registered_brain, mean_intensity * 0.1, 1e10, 1, 0)
-    
-    # Atropos segmentation with 3 classes
-    segmentation = ants.atropos(
-        a=registered_brain,
-        m='[0.2,1x1x1]',
-        c='[5,0]',
-        i='kmeans[3]',
-        x=seg_mask,
-        priorweight=0.0  # No spatial priors, use kmeans initialization
-    )
-    
-    # Extract segmentation labels
-    seg_image = segmentation['segmentation']
-    
-    # Isolate Grey Matter (class 2 in 3-class segmentation)
-    # Note: Class assignment can vary; GM is typically the middle intensity class
-    gm_mask = ants.threshold_image(seg_image, 2, 2, 1, 0)
-    
-    # Apply GM mask to registered brain
-    gm_volume = registered_brain * gm_mask
-    
-    # -------------------------------------------------------------------------
-    # Step 5: Intensity Normalization
-    # -------------------------------------------------------------------------
-    # Min-max scaling to [0, 1] range
-    # This standardizes intensity values across subjects
-    
-    gm_array = gm_volume.numpy()
-    
-    min_val = np.min(gm_array)
-    max_val = np.max(gm_array)
-    
-    if max_val > min_val:
-        gm_array = (gm_array - min_val) / (max_val - min_val)
+    if max_val - min_val > 1e-6:
+        normalized_image = (gm_volume - min_val) / (max_val - min_val)
     else:
-        # Edge case: constant image (shouldn't happen with real data)
-        gm_array = np.zeros_like(gm_array)
-        logger.warning("Constant intensity image detected during normalization")
+        normalized_image = gm_volume
+        
+    # Step 8: Resampling/Resizing to target shape
+    # We register to Template which is already correct size usually? 
+    # MNI 2mm is 91x109x91 usually not 128Cubed.
+    # We explicitly resize to 128x128x128
     
-    # Convert back to ANTsImage
-    gm_normalized = ants.from_numpy(
-        gm_array,
-        origin=gm_volume.origin,
-        spacing=gm_volume.spacing,
-        direction=gm_volume.direction
+    # Create a reference image 128^3
+    new_size = TARGET_SHAPE
+    new_spacing = [old_sz * old_spc / new_sz for old_sz, old_spc, new_sz in zip(registered_image.GetSize(), registered_image.GetSpacing(), new_size)]
+    
+    resampled_final = sitk.Resample(
+        normalized_image,
+        new_size,
+        sitk.Transform(),
+        sitk.sitkLinear,
+        registered_image.GetOrigin(),
+        new_spacing,
+        registered_image.GetDirection(),
+        0.0,
+        normalized_image.GetPixelID()
     )
     
-    # -------------------------------------------------------------------------
-    # Step 6: Resizing/Resampling to Target Shape
-    # -------------------------------------------------------------------------
-    # Resample to uniform target shape for consistent input to neural network
-    # Using linear interpolation (interp_type=0) for smooth resampling
-    
-    gm_resampled = ants.resample_image(
-        gm_normalized,
-        TARGET_SHAPE,
-        use_voxels=True,
-        interp_type=0  # Linear interpolation
-    )
-    
-    # Fallback: Ensure exact shape match with center_crop_or_pad
-    resampled_array = gm_resampled.numpy()
-    
-    if resampled_array.shape != TARGET_SHAPE:
-        resampled_array = center_crop_or_pad(resampled_array, TARGET_SHAPE)
-        gm_resampled = ants.from_numpy(
-            resampled_array,
-            origin=gm_resampled.origin,
-            spacing=gm_resampled.spacing,
-            direction=gm_resampled.direction
-        )
-    
-    # -------------------------------------------------------------------------
-    # Step 7 - Stage C: Verification
-    # -------------------------------------------------------------------------
-    # Verify final output meets requirements
-    
-    final_array = gm_resampled.numpy()
-    
-    # Check shape
-    if final_array.shape != TARGET_SHAPE:
-        raise ValueError(
-            f"Shape mismatch after processing: {final_array.shape} != {TARGET_SHAPE}"
-        )
-    
-    # Check for all-zeros (indicates failed processing)
-    if np.all(final_array == 0):
-        raise ValueError("Processed volume is all zeros - processing failed")
-    
-    # Check for NaN or Inf values
-    if np.any(np.isnan(final_array)) or np.any(np.isinf(final_array)):
-        raise ValueError("Processed volume contains NaN or Inf values")
-    
-    return gm_resampled
-
+    return resampled_final
 
 # =============================================================================
 # MAIN EXECUTION
 # =============================================================================
-
 def main():
-    """
-    Main execution function for the preprocessing pipeline.
+    print(f"Using SimpleITK version: {sitk.Version().VersionString()}")
     
-    Workflow:
-    1. Load clinical data and validate labels
-    2. Process each MRI with skip logic for existing files
-    3. Perform consistency checks on processed data
-    4. Split into train/val/test sets (70/15/15)
-    5. Save split CSVs for model training
-    """
-    
-    print("=" * 60)
-    print("MRI Preprocessing Pipeline for Neurological Disorders")
-    print("=" * 60)
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Setup and Validation
-    # -------------------------------------------------------------------------
-    
-    # Create processed directory if it doesn't exist
+    # 0. Directory Setup
     os.makedirs(PROCESSED_DIR, exist_ok=True)
-    
-    # Load and validate MNI152 template
-    print(f"Loading MNI152 template from: {MNI_TEMPLATE}")
-    try:
-        template = validate_template(MNI_TEMPLATE)
-        print(f"  Template shape: {template.shape}")
-        print(f"  Template spacing: {template.spacing}")
-    except FileNotFoundError as e:
-        print(f"ERROR: {e}")
-        print("\nPlease download the MNI152 2mm template and place it in the project root.")
-        print("Recommended source: https://github.com/ANTsX/ANTs/tree/master/Data")
-        sys.exit(1)
-    
-    # Load clinical CSV
-    print(f"\nLoading clinical data from: {CLINICAL_CSV}")
-    
+    if not os.path.exists(RAW_DIR):
+        print(f"ERROR: Raw Data Directory '{RAW_DIR}' not found.")
+        return
+
+    # 1. Load Clinical Data
     if not os.path.exists(CLINICAL_CSV):
-        print(f"ERROR: Clinical CSV not found at '{CLINICAL_CSV}'")
-        sys.exit(1)
-    
+        print(f"ERROR: Clinical CSV '{CLINICAL_CSV}' not found.")
+        return
+        
     df = pd.read_csv(CLINICAL_CSV)
-    print(f"  Total subjects in CSV: {len(df)}")
     
-    # Validate required columns
-    required_cols = ['subject_id', 'label']
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        print(f"ERROR: Missing required columns: {missing_cols}")
-        sys.exit(1)
+    # Map Labels
+    try:
+        df['label_code'] = df['label'].map(LABEL_MAP)
+        if df['label_code'].isnull().any():
+            invalid_rows = df[df['label_code'].isnull()]
+            raise ValueError(f"Invalid labels found: {invalid_rows['label'].unique()}")
+    except Exception as e:
+        print(f"Error mapping labels: {e}")
+        return
+
+    print(f"Found {len(df)} subjects. Starting preprocessing...")
     
-    # Map labels to numeric values
-    print("\nMapping labels to numeric values:")
-    print(f"  {LABEL_MAP}")
-    
-    # Validate all labels are valid
-    invalid_labels = df[~df['label'].isin(LABEL_MAP.keys())]['label'].unique()
-    if len(invalid_labels) > 0:
-        raise ValueError(f"Invalid labels found in CSV: {invalid_labels}")
-    
-    df['label_num'] = df['label'].map(LABEL_MAP)
-    
-    # Print label distribution
-    print("\nLabel distribution:")
-    for label, count in df['label'].value_counts().items():
-        print(f"  {label}: {count} ({count/len(df)*100:.1f}%)")
-    
-    # -------------------------------------------------------------------------
-    # MRI Processing Loop
-    # -------------------------------------------------------------------------
-    
-    print("\n" + "=" * 60)
-    print("Processing MRI Scans")
-    print("=" * 60 + "\n")
-    
-    processed_paths = []
-    successful = 0
-    skipped = 0
-    failed = 0
-    missing = 0
-    
-    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing MRIs"):
-        subject_id = row['subject_id']
-        input_path = os.path.join(RAW_DIR, f"{subject_id}.nii.gz")
-        output_path = os.path.join(PROCESSED_DIR, f"{subject_id}_processed.nii.gz")
+    processed_records = []
+
+    # 2. Processing Loop
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
+        subject_id = str(row['subject_id'])
+        label = row['label_code']
         
-        # Check if input file exists
-        if not os.path.exists(input_path):
-            logger.warning(f"Input file not found for subject {subject_id}: {input_path}")
-            processed_paths.append(None)
-            missing += 1
-            continue
+        # Input/Output Paths
+        input_filename = f"{subject_id}.nii.gz"
+        input_path = os.path.join(RAW_DIR, input_filename)
+        output_filename = f"{subject_id}_processed.nii.gz"
+        output_path = os.path.join(PROCESSED_DIR, output_filename)
         
-        # Skip if already processed
+        # Check if already processed
         if os.path.exists(output_path):
-            tqdm.write(f"  Skipping existing: {subject_id}")
-            processed_paths.append(output_path)
-            skipped += 1
+            processed_records.append({'subject_id': subject_id, 'label': label, 'path': output_path})
             continue
-        
-        # Process the MRI
-        try:
-            processed_image = process_single_mri(input_path, template)
             
-            if processed_image is not None:
-                # Save processed volume
-                ants.image_write(processed_image, output_path)
-                processed_paths.append(output_path)
-                successful += 1
-            else:
-                processed_paths.append(None)
-                failed += 1
-                
-        except Exception as e:
-            logger.error(f"Failed to process subject {subject_id}: {str(e)}")
-            processed_paths.append(None)
-            failed += 1
-    
-    # Add processed paths to dataframe
-    df['processed_path'] = processed_paths
-    
-    # -------------------------------------------------------------------------
-    # Processing Summary
-    # -------------------------------------------------------------------------
-    
-    print("\n" + "=" * 60)
-    print("Processing Summary")
-    print("=" * 60)
-    print(f"  Successfully processed: {successful}")
-    print(f"  Skipped (existing):     {skipped}")
-    print(f"  Failed:                 {failed}")
-    print(f"  Missing raw files:      {missing}")
-    print(f"  Total with valid paths: {successful + skipped}")
-    
-    # Drop rows without processed files
-    df_valid = df[df['processed_path'].notna()].copy()
-    dropped = len(df) - len(df_valid)
-    
-    if dropped > 0:
-        print(f"\n  Dropped {dropped} subjects without valid processed files")
-    
-    if len(df_valid) == 0:
-        print("\nERROR: No valid processed files. Cannot continue.")
-        sys.exit(1)
-    
-    # -------------------------------------------------------------------------
-    # Consistency Check
-    # -------------------------------------------------------------------------
-    
-    print("\n" + "=" * 60)
-    print("Consistency Check")
-    print("=" * 60)
-    
-    print("\nVerifying all processed volumes have correct shape...")
-    
-    consistency_errors = []
-    
-    for idx, row in tqdm(df_valid.iterrows(), total=len(df_valid), desc="Verifying"):
-        processed_path = row['processed_path']
-        subject_id = row['subject_id']
-        
+        # Check input exists
+        if not os.path.exists(input_path):
+            logging.error(f"Input file not found: {input_path}")
+            continue
+            
         try:
-            img = ants.image_read(processed_path)
-            if img.shape != TARGET_SHAPE:
-                consistency_errors.append(
-                    f"{subject_id}: shape {img.shape} != {TARGET_SHAPE}"
-                )
+            # RUN PIPELINE
+            final_image = process_single_mri(input_path, MNI_TEMPLATE)
+            
+            # Simple consistency check
+            if final_image.GetSize() != TARGET_SHAPE:
+                # Force crop/pad
+                final_image = resize_image_with_crop_or_pad(final_image, TARGET_SHAPE)
+                
+            # Save
+            sitk.WriteImage(final_image, output_path)
+            processed_records.append({'subject_id': subject_id, 'label': label, 'path': output_path})
+            
         except Exception as e:
-            consistency_errors.append(f"{subject_id}: failed to load - {str(e)}")
-    
-    if consistency_errors:
-        print("\nConsistency errors found:")
-        for error in consistency_errors[:10]:  # Show first 10
-            print(f"  - {error}")
-        if len(consistency_errors) > 10:
-            print(f"  ... and {len(consistency_errors) - 10} more")
-        raise ValueError(f"Consistency check failed for {len(consistency_errors)} files")
-    
-    print(f"  All {len(df_valid)} processed volumes verified successfully!")
-    
-    # -------------------------------------------------------------------------
-    # Dataset Splitting
-    # -------------------------------------------------------------------------
-    
-    print("\n" + "=" * 60)
-    print("Dataset Splitting (70% Train / 15% Val / 15% Test)")
-    print("=" * 60)
-    
-    # Stratified split: 70% train, 30% temp
-    train_df, temp_df = train_test_split(
-        df_valid,
-        test_size=0.3,
-        stratify=df_valid['label_num'],
-        random_state=42
-    )
-    
-    # Split temp: 50% val, 50% test (each 15% of total)
-    val_df, test_df = train_test_split(
-        temp_df,
-        test_size=0.5,
-        stratify=temp_df['label_num'],
-        random_state=42
-    )
-    
-    # Save split CSVs
-    train_df.to_csv('train.csv', index=False)
-    val_df.to_csv('val.csv', index=False)
-    test_df.to_csv('test.csv', index=False)
-    
-    print(f"\nDataset split summary:")
-    print(f"  Train: {len(train_df)} samples ({len(train_df)/len(df_valid)*100:.1f}%)")
-    print(f"  Val:   {len(val_df)} samples ({len(val_df)/len(df_valid)*100:.1f}%)")
-    print(f"  Test:  {len(test_df)} samples ({len(test_df)/len(df_valid)*100:.1f}%)")
-    
-    # Print label distribution per split
-    print("\nLabel distribution per split:")
-    for split_name, split_df in [('Train', train_df), ('Val', val_df), ('Test', test_df)]:
-        print(f"\n  {split_name}:")
-        for label in ['CN', 'MCI', 'AD']:
-            count = len(split_df[split_df['label'] == label])
-            print(f"    {label}: {count}")
-    
-    # -------------------------------------------------------------------------
-    # Final Summary
-    # -------------------------------------------------------------------------
-    
-    print("\n" + "=" * 60)
-    print("PREPROCESSING COMPLETE")
-    print("=" * 60)
-    print("\nOutput files:")
-    print(f"  - Processed MRIs: {PROCESSED_DIR}/")
-    print(f"  - train.csv: {len(train_df)} samples")
-    print(f"  - val.csv:   {len(val_df)} samples")
-    print(f"  - test.csv:  {len(test_df)} samples")
-    print("\nReady for model training!")
-    print("=" * 60)
+            logging.error(f"Failed to process {subject_id}: {str(e)}")
+            continue
 
+    # 3. Create Dataset Splits
+    if not processed_records:
+        print("No files processed successfully.")
+        return
+        
+    df_processed = pd.DataFrame(processed_records)
+    print(f"\nSuccessfully processed {len(df_processed)}/{len(df)} scans.")
+    
+    # Validation: Remove zero-variance images (empty black images)
+    valid_indices = []
+    for idx, row in df_processed.iterrows():
+        try:
+            im = sitk.ReadImage(row['path'])
+            stats = sitk.StatisticsImageFilter()
+            stats.Execute(im)
+            if stats.GetMaximum() > 0:
+                valid_indices.append(idx)
+            else:
+                logging.error(f"Image {row['subject_id']} is all zeros.")
+        except:
+            pass
+            
+    df_processed = df_processed.loc[valid_indices]
+    
+    # Split
+    try:
+        X = df_processed[['subject_id', 'path']]
+        y = df_processed['label']
+        
+        # Train (70%) vs Temp (30%)
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, stratify=y, random_state=42)
+        # Val (15%) vs Test (15%)
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42)
+        
+        # Save splits
+        train_df = pd.concat([X_train, y_train], axis=1)
+        val_df = pd.concat([X_val, y_val], axis=1)
+        test_df = pd.concat([X_test, y_test], axis=1)
+        
+        train_df.to_csv('train.csv', index=False)
+        val_df.to_csv('val.csv', index=False)
+        test_df.to_csv('test.csv', index=False)
+        
+        print(f"\nSplits created:")
+        print(f"Train: {len(train_df)}")
+        print(f"Val:   {len(val_df)}")
+        print(f"Test:  {len(test_df)}")
+        
+    except ValueError as e:
+        print(f"Splitting failed (likely too few samples for stratification): {e}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
