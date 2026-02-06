@@ -75,6 +75,7 @@ SUBJECT_003,AD
 
 ## ⚙️ Features
 
+- ✅ **Live Quality Verification**: Real-time SNR and Alignment Accuracy checks
 - ✅ **Skip Logic**: Resumes from where it left off
 - ✅ **Progress Bars**: Real-time tqdm tracking
 - ✅ **Error Logging**: Detailed logs in `preprocessing_errors.log`
