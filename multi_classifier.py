@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 # Constants
 # Constants
-BATCH_SIZE = 8
-NUM_EPOCHS = 1 # Single epoch for validation of pipeline/metrics check
+BATCH_SIZE = 4 # Reduced to 4 to prevent CPU freeze/hang
+NUM_EPOCHS = 20 # Per Master Prompt specification
 LEARNING_RATE = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 NUM_WORKERS = 0 # Windows safe
