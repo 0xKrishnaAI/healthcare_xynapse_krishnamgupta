@@ -1,4 +1,4 @@
-# 🧠 NeuroDx: AI-Powered Neurological Disorder Classification
+# 🧠 NeuroDx: AI-Powered Neurological Disorder Detection, Classification, Assessment
 
 Deep learning system for T1-weighted MRI brain scans to detect and classify neurological conditions:
 - **CN** (Cognitively Normal) — Healthy brain function
