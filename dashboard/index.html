@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroDx - BrainScan AI</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- Sidebar -->
+        <aside class="sidebar glass">
+            <div class="logo-area">
+                <i class="fa-solid fa-brain brain-pulse"></i>
+                <h2>NeuroDx</h2>
+            </div>
+            
+            <nav class="nav-links">
+                <a href="#" class="nav-item active" data-tab="dashboard">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="reports">
+                    <i class="fa-solid fa-file-medical"></i>
+                    <span>Reports</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="records">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>Records</span>
+                </a>
+                <a href="#" class="nav-item alert-item" data-tab="sos">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>SOS</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <div class="user-profile">
+                <div class="avatar">DR</div>
+                <div class="user-info">
+                    <p class="name">Dr. A. Smith</p>
+                    <p class="role">Neurologist</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            
+            <!-- Header -->
+            <header class="top-bar glass">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="header-actions">
+                    <button class="icon-btn"><i class="fa-regular fa-bell"></i></button>
+                    <button class="icon-btn"><i class="fa-regular fa-circle-question"></i></button>
+                </div>
+            </header>
+
+            <!-- Dashboard Grid -->
+            <div id="dashboard-view" class="view-section active">
+                <div class="dashboard-grid">
+                    
+                    <!-- Left Column: Visualization -->
+                    <div class="col-left">
+                        <!-- 3D Brain Viewer -->
+                        <div class="card glass brain-card">
+                            <div class="card-header">
+                                <h3>3D Brain Analysis</h3>
+                                <span class="badge live">Live View</span>
+                            </div>
+                            <div id="brain-container">
+                                <!-- Three.js Canvas will be injected here -->
+                                <div class="loader" id="brain-loader">
+                                    <div class="spinner"></div>
+                                    <p>Initializing Neural Engine...</p>
+                                </div>
+                            </div>
+                            <div class="brain-controls">
+                                <button class="control-btn" onclick="rotateBrain('left')"><i class="fa-solid fa-rotate-left"></i></button>
+                                <button class="control-btn" onclick="toggleAutoRotate()"><i class="fa-solid fa-play"></i></button>
+                                <button class="control-btn" onclick="rotateBrain('right')"><i class="fa-solid fa-rotate-right"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- MRI Slice Previews -->
+                        <div class="slices-container">
+                            <div class="slice-card glass">
+                                <img src="assets/slice_axial.png" alt="Axial" onerror="this.src='https://placehold.co/100x100/e2e8f0/1e293b?text=Axial'">
+                                <span>Axial</span>
+                            </div>
+                            <div class="slice-card glass">
+                                <img src="assets/slice_sagittal.png" alt="Sagittal" onerror="this.src='https://placehold.co/100x100/e2e8f0/1e293b?text=Sagittal'">
+                                <span>Sagittal</span>
+                            </div>
+                            <div class="slice-card glass">
+                                <img src="assets/slice_coronal.png" alt="Coronal" onerror="this.src='https://placehold.co/100x100/e2e8f0/1e293b?text=Coronal'">
+                                <span>Coronal</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Analysis & Upload -->
+                    <div class="col-right">
+                        
+                        <!-- Upload Zone -->
+                        <div class="card glass upload-card" id="drop-zone">
+                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                            <h3>Upload MRI Scan</h3>
+                            <p>Drag & drop .nii files here or click to browse</p>
+                            <input type="file" id="file-input" hidden multiple accept=".nii,.nii.gz">
+                            <button class="btn-primary" onclick="document.getElementById('file-input').click()">Select Files</button>
+                            
+                            <!-- Processing State (Hidden by default) -->
+                            <div id="processing-state" class="hidden">
+                                <div class="progress-bar">
+                                    <div class="fill" id="upload-progress"></div>
+                                </div>
+                                <p id="status-text">Preprocessing (Task 1)...</p>
+                            </div>
+                        </div>
+
+                        <!-- Results Summary -->
+                        <div class="card glass results-card hidden" id="results-panel">
+                            <div class="card-header">
+                                <h3>Classification Result</h3>
+                                <div class="toggle-switch">
+                                    <span class="active" id="mode-multi">Multi</span>
+                                    <span id="mode-binary">Binary</span>
+                                </div>
+                            </div>
+                            
+                            <div class="result-display">
+                                <div class="diagnosis-ring" id="diagnosis-ring">
+                                    <span class="score" id="confidence-score">--</span>
+                                    <span class="label" id="diagnosis-label">Waiting</span>
+                                </div>
+                            </div>
+
+                            <div class="metrics-list">
+                                <div class="metric-item">
+                                    <span>Brain Atrophy</span>
+                                    <div class="bar-bg"><div class="bar-fill" style="width: 0%" id="atrophy-bar"></div></div>
+                                </div>
+                                <div class="metric-item">
+                                    <span>Amyloid Load</span>
+                                    <div class="bar-bg"><div class="bar-fill" style="width: 0%" id="amyloid-bar"></div></div>
+                                </div>
+                            </div>
+
+                            <div class="alert-box" id="ai-recommendation">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <p>Upload a scan to receive AI assessment.</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Views (Hidden placeholders for now) -->
+            <div id="reports-view" class="view-section">
+                <!-- Will be populated by JS -->
+                 <div class="card glass">
+                    <h2>Recent Analysis Reports</h2>
+                    <table class="medical-table" id="reports-table">
+                        <thead>
+                            <tr>
+                                <th>Patient ID</th>
+                                <th>Date</th>
+                                <th>Scan Type</th>
+                                <th>Diagnosis</th>
+                                <th>Confidence</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Rows injected via JS -->
+                        </tbody>
+                    </table>
+                 </div>
+            </div>
+
+            <div id="sos-view" class="view-section">
+                <div class="sos-container">
+                    <button class="sos-btn">
+                        <i class="fa-solid fa-bell"></i>
+                        <span>EMERGENCY ALERT</span>
+                    </button>
+                    <p>Press to notify on-call neurologist immediately.</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="js/brain-viewer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
