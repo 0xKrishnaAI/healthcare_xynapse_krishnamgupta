@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect } from 'react';
 
 // Initial State
 const initialState = {
-    theme: localStorage.getItem('theme') || 'medical', // medical, light, dark
+    theme: (typeof window !== 'undefined' ? localStorage.getItem('theme') : null) || 'medical', // medical, light, dark
     user: { name: 'Dr. A. Smith', role: 'Chief Neurologist', avatar: '/assets/user.svg' },
     notifications: [
         { id: 1, text: 'New analysis ready: Patient 002_S_0295', type: 'success', time: '10m ago' },
@@ -20,7 +20,9 @@ const initialState = {
 const appReducer = (state, action) => {
     switch (action.type) {
         case 'SET_THEME':
-            localStorage.setItem('theme', action.payload);
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('theme', action.payload);
+            }
             return { ...state, theme: action.payload };
         case 'TOGGLE_SIDEBAR':
             return { ...state, isSidebarOpen: !state.isSidebarOpen };
