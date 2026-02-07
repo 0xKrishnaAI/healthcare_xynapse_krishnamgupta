@@ -4,8 +4,8 @@ import confetti from 'canvas-confetti';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCloudUploadAlt, faCheckCircle, faPlayCircle, faFilePdf, faBrain, faChartLine, faMicroscope } from '@fortawesome/free-solid-svg-icons';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Sphere, MeshDistortMaterial, Points, PointMaterial } from '@react-three/drei';
-import * as random from 'maath/random/dist/maath-random.esm';
+import { OrbitControls, Sphere, MeshDistortMaterial, PointMaterial, Html } from '@react-three/drei';
+
 import {
     PieChart, Pie, Cell, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar,
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid
@@ -103,110 +103,96 @@ const PopulationBar = ({ result }) => {
 };
 
 
+// --- Volumetric Anatomical Brain (Task 14) ---
 
-// --- Advanced 3D Components ---
-
-const NeuralGalaxy = ({ diagnosis }) => {
-    const ref = useRef();
-
-    // Determine visual properties based on diagnosis
-    const config = useMemo(() => {
-        switch (diagnosis) {
-            case 'AD': return { color: '#ff0055', radius: 1.4, count: 5000 }; // Atrophy & Danger
-            case 'MCI': return { color: '#ffaa00', radius: 1.5, count: 6500 }; // Warning
-            case 'CN':
-            default: return { color: '#00f2ff', radius: 1.6, count: 9000 }; // Healthy
-        }
-    }, [diagnosis]);
-
-    const [sphere] = useState(() => random.inSphere(new Float32Array(config.count * 3), { radius: config.radius }));
-
-    // Re-generate sphere if diagnosis changes (key changes in parent) could be expensive, 
-    // but for now we'll rely on React key to remount or just accept the initial state if not remounting.
-    // To properly update density dynamically we'd need useEffect. 
-    // For simplicity, we will stick to the initial generation or force remount via key.
-
-    useFrame((state, delta) => {
-        ref.current.rotation.x -= delta / 15;
-        ref.current.rotation.y -= delta / 20;
-    });
+const BrainLobe = ({ position, scale, color, distort = 0.4, opacity = 0.3, label, diagnosis }) => {
+    const [hovered, setHovered] = useState(false);
 
     return (
-        <group rotation={[0, 0, Math.PI / 4]}>
-            <Points ref={ref} positions={sphere} stride={3} frustumCulled={false}>
-                <PointMaterial
+        <group position={position}>
+            <Sphere args={[1, 64, 64]} scale={scale} onPointerOver={() => setHovered(true)} onPointerOut={() => setHovered(false)}>
+                <MeshDistortMaterial
+                    color={color}
+                    distort={distort}
+                    speed={2}
+                    roughness={0.2}
+                    metalness={0.1}
+                    transmission={0.5} // Glass-like
+                    thickness={0.5}
                     transparent
-                    color={config.color}
-                    size={0.012}
-                    sizeAttenuation={true}
-                    depthWrite={false}
-                    opacity={0.8}
-                    blending={2}
+                    opacity={opacity}
                 />
-            </Points>
+            </Sphere>
+            {/* Annotation Label */}
+            {(hovered || (label && diagnosis !== 'CN' && label.includes('Hippocampus'))) && label && (
+                <Html distanceFactor={10}>
+                    <div className="bg-black/80 text-white text-[8px] p-1 rounded border border-white/20 whitespace-nowrap backdrop-blur-sm">
+                        {label}
+                        {diagnosis === 'AD' && label.includes('Hippocampus') && <span className="block text-red-400 font-bold">ATROPHY DETECTED</span>}
+                    </div>
+                </Html>
+            )}
         </group>
     );
 };
 
-const HolographicHull = ({ diagnosis }) => {
-    const meshRef = useRef();
+const BrainGeometry = ({ diagnosis }) => {
+    const groupRef = useRef();
+
+    // Rotate the whole brain slowly
+    useFrame((state, delta) => {
+        groupRef.current.rotation.y -= delta / 10;
+    });
 
     const config = useMemo(() => {
-        switch (diagnosis) {
-            case 'AD': return { distort: 0.6, speed: 2.5, opacity: 0.1 }; // Unstable
-            case 'MCI': return { distort: 0.45, speed: 2, opacity: 0.12 };
-            case 'CN':
-            default: return { distort: 0.3, speed: 1.5, opacity: 0.15 }; // Stable
-        }
+        const isAD = diagnosis === 'AD';
+        const isMCI = diagnosis === 'MCI';
+
+        return {
+            temporalColor: isAD ? '#ff0000' : isMCI ? '#ffaa00' : '#00f2ff', // Red for AD, Amber MCI
+            temporalOpacity: isAD ? 0.8 : 0.4, // Higher opacity for damaged area
+            distort: isAD ? 0.6 : 0.3
+        };
     }, [diagnosis]);
 
-    useFrame((state) => {
-        const t = state.clock.getElapsedTime();
-        meshRef.current.rotation.y = t * 0.1;
-        meshRef.current.rotation.z = t * 0.05;
-    });
-
     return (
-        <Sphere ref={meshRef} visible args={[1, 64, 64]} scale={1.8}>
-            <MeshDistortMaterial
-                color="#0044aa"
-                attach="material"
+        <group ref={groupRef} rotation={[0.2, 0, 0]}>
+            {/* Frontal Lobes (Left/Right) */}
+            <BrainLobe position={[-0.5, 0.5, 0.8]} scale={[0.9, 0.9, 0.9]} color="#00f2ff" label="Frontal Lobe (L)" diagnosis={diagnosis} />
+            <BrainLobe position={[0.5, 0.5, 0.8]} scale={[0.9, 0.9, 0.9]} color="#00f2ff" label="Frontal Lobe (R)" diagnosis={diagnosis} />
+
+            {/* Parietal Lobes */}
+            <BrainLobe position={[-0.6, 0.8, -0.2]} scale={[0.8, 0.8, 0.8]} color="#00aaee" label="Parietal Lobe" diagnosis={diagnosis} />
+            <BrainLobe position={[0.6, 0.8, -0.2]} scale={[0.8, 0.8, 0.8]} color="#00aaee" label="Parietal Lobe" diagnosis={diagnosis} />
+
+            {/* Temporal Lobes (Critical for AD) */}
+            <BrainLobe
+                position={[-0.8, -0.2, 0.2]}
+                scale={[0.7, 0.6, 1.2]}
+                color={config.temporalColor}
+                opacity={config.temporalOpacity}
                 distort={config.distort}
-                speed={config.speed}
-                roughness={0.1}
-                metalness={0.8}
-                transparent
-                opacity={config.opacity}
-                wireframe={false}
-                side={2}
+                label="Temporal Lobe / Hippocampus"
+                diagnosis={diagnosis}
             />
-        </Sphere>
-    );
-};
+            <BrainLobe
+                position={[0.8, -0.2, 0.2]}
+                scale={[0.7, 0.6, 1.2]}
+                color={config.temporalColor}
+                opacity={config.temporalOpacity}
+                distort={config.distort}
+                label="Temporal Lobe / Hippocampus"
+                diagnosis={diagnosis}
+            />
 
-const SynapseSparks = ({ diagnosis }) => {
-    const ref = useRef();
-    const count = diagnosis === 'AD' ? 200 : diagnosis === 'MCI' ? 350 : 500; // Less activity in AD
+            {/* Occipital Lobe */}
+            <BrainLobe position={[0, 0, -1.2]} scale={[1, 1, 0.8]} color="#0088cc" label="Occipital Lobe" diagnosis={diagnosis} />
 
-    const [sparks] = useState(() => random.inSphere(new Float32Array(count * 3), { radius: 1.7 }));
+            {/* Cerebellum */}
+            <BrainLobe position={[0, -0.8, -0.8]} scale={[1.2, 0.6, 0.8]} color="#006699" label="Cerebellum" diagnosis={diagnosis} />
 
-    useFrame((state, delta) => {
-        ref.current.rotation.x += delta / 10;
-        ref.current.rotation.y += delta / 10;
-    });
-
-    return (
-        <group rotation={[0, 0, Math.PI / 4]}>
-            <Points ref={ref} positions={sparks} stride={3} frustumCulled={false}>
-                <PointMaterial
-                    transparent
-                    color="#ffffff"
-                    size={0.03}
-                    sizeAttenuation={true}
-                    depthWrite={false}
-                    opacity={0.6}
-                />
-            </Points>
+            {/* Inner Glow Core */}
+            <PointMaterial transparent color={config.temporalColor} size={0.5} opacity={0.2} depthWrite={false} />
         </group>
     );
 };
@@ -383,9 +369,7 @@ const Dashboard = () => {
                             <directionalLight position={[10, 10, 5]} intensity={1} color="#ffffff" />
                             <pointLight position={[-10, -10, -5]} intensity={0.5} color="#007bff" />
 
-                            <NeuralGalaxy diagnosis={state.result?.label} key={`galaxy-${state.result?.label}`} />
-                            <SynapseSparks diagnosis={state.result?.label} key={`sparks-${state.result?.label}`} />
-                            <HolographicHull diagnosis={state.result?.label} />
+                            <BrainGeometry diagnosis={state.result?.label} key={`brain-${state.result?.label}`} />
 
                             <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.5} />
                         </Canvas>

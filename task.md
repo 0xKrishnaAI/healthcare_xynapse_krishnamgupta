@@ -121,6 +121,22 @@
     - [ ] Push latest changes to GitHub.
     - [ ] Connect/Trigger Vercel deployment (User Action).
 
+# Task 13: Anatomical Visualization Upgrade (User Request)
+- [ ] **Shape Refinement**:
+    - [ ] Replace simple sphere with **Dual Hemisphere** particle distribution.
+    - [ ] Add specific **Hippocampus/Temporal Lobe** zones.
+- [ ] **Data-Driven Highlighting**:
+    - [ ] Highlight affected areas (e.g., Hippocampus for AD) with distinct colors/effects.
+    - [ ] Implement pulsating "Damage Markers" for AD/MCI.
+
+# Task 14: Structural Brain Modeling & Annotation (User Request)
+- [x] **Volumetric Anatomy**:
+    - [x] Construct "Solid Brain" from clustered distorted spheres (Frontal, Temporal, Parietal, Occipital, Cerebellum).
+    - [x] Apply "MRI Shader" material (striped/layered look - approximated with MeshDistortMaterial).
+- [x] **Interactive Annotations**:
+    - [x] Add 3D Floating Labels (`<Html>`) pointing to diagnosis items (e.g., "Hippocampal Atrophy").
+    - [x] Show specific "Damage Report" when hovering over affected lobes.
+
 # Task 10: Gemini AI Integration (User Request)
 - [ ] **Setup & Configuration**:
     - [ ] Update `Settings` to store Gemini API Key (localStorage).
