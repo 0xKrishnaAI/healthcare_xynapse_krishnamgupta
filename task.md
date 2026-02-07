@@ -112,3 +112,22 @@
     - [x] Implement `DiseaseInfo` panel with symptoms and reference images.
     - [x] Add explicit medical **Disclaimer**.
 - [x] **Verification**: Ensure UI adapts to CN vs AD results correctly.
+
+# Task 12: Vercel Deployment (Priority)
+- [ ] **Configuration**:
+    - [ ] Create `vercel.json` for SPA routing.
+    - [ ] Verify `package.json` build scripts.
+- [ ] **Deployment**:
+    - [ ] Push latest changes to GitHub.
+    - [ ] Connect/Trigger Vercel deployment (User Action).
+
+# Task 10: Gemini AI Integration (User Request)
+- [ ] **Setup & Configuration**:
+    - [ ] Update `Settings` to store Gemini API Key (localStorage).
+    - [ ] Create `utils/gemini.js` service for API calls.
+- [ ] **AI Analysis & Generation**:
+    - [ ] Implement `generateMedicalReport` (Text Analysis).
+    - [ ] Implement `generateReferenceIllustration` (Image Prompt/Generation).
+- [ ] **UI Integration**:
+    - [ ] Add "Ask AI Assistant" or "Generate Report" button in `DiseaseInfo`.
+    - [ ] Display AI-generated insights and images.
