@@ -1,13 +1,10 @@
-import React, { useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCloudUploadAlt, faCheckCircle, faPlayCircle, faFilePdf } from '@fortawesome/free-solid-svg-icons';
 
 import { useApp } from '../context/AppContext';
-import BrainViewer from './BrainViewer';
+// import BrainViewer from './BrainViewer'; // Deprecated in favor of Spline
 import { simulatePreprocessing, simulatePipeline, fetchInferenceResult } from '../utils/api';
 import { pageVariants, cardVariants, fadeInUp } from '../utils/animations';
 
@@ -77,23 +74,27 @@ const Dashboard = () => {
             {/* --- Left Column: Visualization (Span 2) --- */}
             <motion.div variants={cardVariants} className="lg:col-span-2 flex flex-col gap-6">
 
-                {/* 3D Brain Viewer */}
-                <div className="glass h-[500px] relative overflow-hidden flex flex-col">
-                    <div className="absolute top-4 left-4 z-10">
+                {/* 3D Brain Viewer (Spline Embed) */}
+                <div className="glass h-[500px] relative overflow-hidden flex flex-col p-0">
+                    <div className="absolute top-4 left-4 z-10 pointer-events-none">
                         <h3 className="text-lg font-bold text-gray-700">3D Neural Analysis</h3>
-                        <p className="text-xs text-gray-500">Live WebGL Renderer • Three.js</p>
+                        <p className="text-xs text-gray-500">Interactive Spline Model</p>
                     </div>
 
-                    <div className="absolute top-4 right-4 z-10 flex gap-2">
+                    <div className="absolute top-4 right-4 z-10 flex gap-2 pointer-events-none">
                         <span className={`px-2 py-1 rounded-lg text-xs font-bold ${state.isProcessing ? 'bg-blue-100 text-primary' : 'bg-gray-100 text-gray-500'}`}>
                             {state.isProcessing ? 'PROCESSING' : 'IDLE'}
                         </span>
                     </div>
 
-                    <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-                        <BrainViewer result={state.result} isProcessing={state.isProcessing} />
-                        <OrbitControls enableZoom={true} enablePan={false} />
-                    </Canvas>
+                    <iframe
+                        src='https://my.spline.design/particleuibrain-rdjn2jg6NlGU7CyoplyPPwoP/'
+                        frameBorder='0'
+                        width='100%'
+                        height='100%'
+                        title="Spline 3D Brain"
+                        className="w-full h-full"
+                    ></iframe>
                 </div>
 
                 {/* Slice Previews */}
