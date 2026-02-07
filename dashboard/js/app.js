@@ -1,185 +1,224 @@
-// NeuroDx Dashboard Logic
-// Handles UI interactions, Tabs, Upload Simulation, and Data Injection
+/**
+ * NeuroDx - BrainScan AI Dashboard Controller
+ * Handles UI interactions, simulating the 3-stage backend pipeline, and dynamic result rendering.
+ */
 
-document.addEventListener('DOMContentLoaded', () => {
-    initTabs();
-    initUpload();
-    initSimulatedReports();
-});
+class DashboardController {
+    constructor() {
+        this.currentView = 'dashboard';
+        this.isProcessing = false;
 
-// --- Tab Navigation ---
-function initTabs() {
-    const tabs = document.querySelectorAll('.nav-item:not(.alert-item)');
-    const views = document.querySelectorAll('.view-section');
-    const pageTitle = document.getElementById('page-title');
+        // DOM Elements
+        this.elements = {
+            tabs: document.querySelectorAll('.nav-item'),
+            views: document.querySelectorAll('.view-section'),
+            uploadZone: document.getElementById('upload-zone'),
+            fileInput: document.getElementById('file-input'),
+            progressContainer: document.getElementById('progress-container'),
+            progressBar: document.getElementById('progress-bar'),
+            progressLabel: document.getElementById('progress-label'),
+            progressPercent: document.getElementById('progress-percent'),
+            taskSteps: {
+                task1: document.getElementById('task1-step'),
+                task2: document.getElementById('task2-step'),
+                task3: document.getElementById('task3-step')
+            },
+            resultsPanel: document.getElementById('results-panel'),
+            ringProgress: document.getElementById('ring-progress'),
+            confScore: document.getElementById('confidence-score'),
+            diagLabel: document.getElementById('diagnosis-label'),
+            atrophyBar: document.getElementById('atrophy-bar'),
+            atrophyVal: document.getElementById('atrophy-val'),
+            amyloidBar: document.getElementById('amyloid-bar'),
+            amyloidVal: document.getElementById('amyloid-val')
+        };
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-
-            // Remove active class
-            tabs.forEach(t => t.classList.remove('active'));
-            views.forEach(v => v.classList.remove('active'));
-
-            // Add active class
-            tab.classList.add('active');
-            const tabId = tab.getAttribute('data-tab');
-            const view = document.getElementById(`${tabId}-view`);
-
-            if (view) view.classList.add('active');
-
-            // Update Title
-            pageTitle.textContent = tab.querySelector('span').textContent;
-        });
-    });
-}
-
-// --- Upload Simulation ---
-function initUpload() {
-    const dropZone = document.getElementById('drop-zone');
-    const fileInput = document.getElementById('file-input');
-    const processingState = document.getElementById('processing-state');
-    const uploadProgress = document.getElementById('upload-progress');
-    const statusText = document.getElementById('status-text');
-    const resultsPanel = document.getElementById('results-panel');
-    const diagnosisRing = document.getElementById('diagnosis-ring');
-    const diagnosisLabel = document.getElementById('diagnosis-label');
-    const confidenceScore = document.getElementById('confidence-score');
-    const atrophyBar = document.getElementById('atrophy-bar');
-    const amyloidBar = document.getElementById('amyloid-bar');
-
-    // Drag & Drop visual feedback
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.style.border = '2px dashed var(--primary-color)';
-        dropZone.style.background = 'rgba(0, 123, 255, 0.05)';
-    });
-
-    dropZone.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        dropZone.style.border = '2px dashed #cbd5e0';
-        dropZone.style.background = 'transparent';
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        handleFiles(e.dataTransfer.files);
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
-    });
-
-    function handleFiles(files) {
-        if (files.length === 0) return;
-
-        // Reset UI
-        resultsPanel.classList.add('hidden');
-        dropZone.querySelector('.upload-icon').classList.add('hidden');
-        dropZone.querySelector('h3').classList.add('hidden');
-        dropZone.querySelector('p').classList.add('hidden');
-        dropZone.querySelector('button').classList.add('hidden');
-
-        // Start Processing
-        processingState.classList.remove('hidden');
-        animateProgress();
+        this.init();
     }
 
-    function animateProgress() {
+    init() {
+        this.setupTabs();
+        this.setupUpload();
+        this.setupMobileMenu();
+
+        // Populate Reports Table
+        this.renderReports();
+    }
+
+    /* --- Navigation --- */
+    setupTabs() {
+        this.elements.tabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = tab.dataset.tab;
+                this.switchView(target);
+
+                // Active State Update
+                this.elements.tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+            });
+        });
+    }
+
+    switchView(viewId) {
+        this.elements.views.forEach(view => {
+            view.classList.remove('active');
+            if (view.id === `${viewId}-view`) {
+                view.classList.add('active');
+            }
+        });
+    }
+
+    /* --- Upload & Simulation Logic --- */
+    setupUpload() {
+        const zone = this.elements.uploadZone;
+        const input = this.elements.fileInput;
+
+        // Visual Feedback for Drag & Drop
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            zone.style.borderColor = 'var(--primary)';
+            zone.style.background = 'rgba(0,123,255,0.05)';
+        });
+
+        zone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            zone.removeAttribute('style');
+        });
+
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files.length > 0) this.startSimulation(e.dataTransfer.files[0]);
+        });
+
+        input.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) this.startSimulation(e.target.files[0]);
+        });
+    }
+
+    startSimulation(file) {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
+
+        // UI Reset
+        this.elements.uploadZone.classList.add('hidden');
+        this.elements.progressContainer.classList.remove('hidden');
+        this.elements.resultsPanel.classList.add('hidden');
+
+        // Reset Steps
+        Object.values(this.elements.taskSteps).forEach(step => step.className = 'pending');
+
+        // Simulation Loop
         let progress = 0;
         const interval = setInterval(() => {
-            progress += Math.random() * 5;
-            if (progress > 100) progress = 100;
+            progress += 1;
+            this.updateProgressUI(progress);
 
-            uploadProgress.style.width = `${progress}%`;
-
-            // Update status text based on progress stages
-            if (progress < 30) statusText.textContent = "Preprocessing (Task 1): N4 Bias Correction...";
-            else if (progress < 60) statusText.textContent = "Preprocessing (Task 1): Skull Stripping & MNI Registration...";
-            else if (progress < 85) statusText.textContent = "AI Analysis (Task 3): Multi-Class Classification...";
-            else statusText.textContent = "Finalizing Report...";
-
-            if (progress === 100) {
+            if (progress >= 100) {
                 clearInterval(interval);
-                setTimeout(showResults, 500);
+                setTimeout(() => this.showResults(), 800);
             }
-        }, 150);
+        }, 60); // Total time approx 6s
     }
 
-    function showResults() {
-        // Hide processing, show results
-        processingState.classList.add('hidden');
-        dropZone.style.display = 'none'; // Hide upload area completely or reset
-        resultsPanel.classList.remove('hidden');
-        resultsPanel.style.animation = 'fadeIn 0.5s ease';
+    updateProgressUI(percent) {
+        this.elements.progressBar.style.width = `${percent}%`;
+        this.elements.progressPercent.textContent = `${percent}%`;
 
-        // Simulate Random AI Result (for demo)
+        // Task 1: 0-30%
+        if (percent < 30) {
+            this.elements.progressLabel.textContent = "Preprocessing: N4 Bias Correction...";
+            this.elements.taskSteps.task1.className = 'active';
+        }
+        // Task 2: 30-60%
+        else if (percent < 60) {
+            this.elements.progressLabel.textContent = "Binary Classification (CN vs AD)...";
+            this.elements.taskSteps.task1.className = 'completed';
+            this.elements.taskSteps.task2.className = 'active';
+        }
+        // Task 3: 60-100%
+        else {
+            this.elements.progressLabel.textContent = "Multi-Class Analysis (MCI Detection)...";
+            this.elements.taskSteps.task2.className = 'completed';
+            this.elements.taskSteps.task3.className = 'active';
+        }
+
+        if (percent === 100) {
+            this.elements.taskSteps.task3.className = 'completed';
+            this.elements.progressLabel.textContent = "Analysis Complete.";
+        }
+    }
+
+    showResults() {
+        this.isProcessing = false;
+        this.elements.progressContainer.classList.add('hidden');
+        this.elements.resultsPanel.classList.remove('hidden');
+
+        // Randomly pick a result scenarios (for demo)
         const scenarios = [
-            { label: 'CN', full: 'Cognitively Normal', class: 'cn', score: 98, atrophy: 12, amyloid: 5 },
-            { label: 'MCI', full: 'Mild Impairment', class: 'mci', score: 76, atrophy: 35, amyloid: 42 },
-            { label: 'AD', full: 'Alzheimer\'s Disease', class: 'ad', score: 92, atrophy: 68, amyloid: 85 }
+            { label: 'Normal (CN)', color: 'var(--success)', score: 98, atrophy: 12, amyloid: 8 },
+            { label: 'MCI (Early Stage)', color: 'var(--warning)', score: 76, atrophy: 35, amyloid: 42 },
+            { label: 'Alzheimer\'s (AD)', color: 'var(--danger)', score: 94, atrophy: 72, amyloid: 88 }
         ];
 
         const result = scenarios[Math.floor(Math.random() * scenarios.length)];
 
-        // Update DOM
-        diagnosisRing.className = `diagnosis-ring ${result.class}`;
-        diagnosisLabel.textContent = result.label;
-        diagnosisLabel.title = result.full;
+        // Render Ring
+        const radius = 45;
+        const circumference = 2 * Math.PI * radius;
+        const offset = circumference - (result.score / 100) * circumference;
 
-        // Animate numbers
-        animateValue(confidenceScore, 0, result.score, 1000, '%');
+        this.elements.ringProgress.style.strokeDashoffset = offset;
+        this.elements.ringProgress.style.stroke = result.color;
 
-        // Animate Bars
-        setTimeout(() => {
-            atrophyBar.style.width = `${result.atrophy}%`;
-            amyloidBar.style.width = `${result.amyloid}%`;
-        }, 200);
+        this.elements.confScore.textContent = `${result.score}%`;
+        this.elements.diagLabel.textContent = result.label;
+        this.elements.diagLabel.style.color = result.color;
 
-        // Update Brain Viewer Highlight (if integrated)
-        if (window.updateBrainColor) {
-            window.updateBrainColor(result.class);
-        }
+        // Render Biomarkers
+        this.elements.atrophyBar.style.width = `${result.atrophy}%`;
+        this.elements.atrophyVal.textContent = `${result.atrophy}%`;
+
+        this.elements.amyloidBar.style.width = `${result.amyloid}%`;
+        this.elements.amyloidVal.textContent = `${result.amyloid}%`;
+    }
+
+    /* --- Reports Table --- */
+    renderReports() {
+        const container = document.getElementById('reports-view');
+        container.innerHTML = `
+            <div class="card glass">
+                <h3>Recent Patient Scan Reports</h3>
+                <table style="width:100%; margin-top:1rem; border-collapse:collapse;">
+                    <thead style="text-align:left; color:var(--text-secondary);">
+                        <tr><th style="padding:10px;">ID</th><th>Date</th><th>Prediction</th><th>Conf.</th><th>Status</th></tr>
+                    </thead>
+                    <tbody style="font-size:0.9rem;">
+                        <tr style="border-top:1px solid #eee;">
+                            <td style="padding:10px;">002_S_0295</td><td>Oct 22</td><td>CN</td><td>98%</td>
+                            <td><span style="background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; font-size:0.8rem;">Accepted</span></td>
+                        </tr>
+                        <tr style="border-top:1px solid #eee;">
+                            <td style="padding:10px;">002_S_0413</td><td>Oct 21</td><td>MCI</td><td>72%</td>
+                            <td><span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:10px; font-size:0.8rem;">Review</span></td>
+                        </tr>
+                        <tr style="border-top:1px solid #eee;">
+                            <td style="padding:10px;">002_S_1234</td><td>Oct 20</td><td>AD</td><td>94%</td>
+                            <td><span style="background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:10px; font-size:0.8rem;">Alert</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    setupMobileMenu() {
+        // Simple toggle for mobile sidebar placeholder
+        // In a real app this would slide out the drawer
     }
 }
 
-// Helper: Animate numbers
-function animateValue(obj, start, end, duration, suffix = '') {
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        obj.innerHTML = Math.floor(progress * (end - start) + start) + suffix;
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
-        }
-    };
-    window.requestAnimationFrame(step);
-}
-
-// --- Simulated Reports Table ---
-function initSimulatedReports() {
-    const tableBody = document.querySelector('#reports-table tbody');
-    if (!tableBody) return;
-
-    const data = [
-        { id: '002_S_0295', date: '2023-10-15', type: 'T1-MRI', diag: 'CN (Normal)', conf: '98%', status: 'Accepted' },
-        { id: '002_S_0413', date: '2023-10-12', type: 'T1-MRI', diag: 'AD (Alzheimer\'s)', conf: '92%', status: 'Accepted' },
-        { id: '002_S_1234', date: '2023-10-10', type: 'T1-MRI', diag: 'MCI', conf: '55%', status: 'Rejected (<60%)' },
-    ];
-
-    data.forEach(row => {
-        const tr = document.createElement('tr');
-        const statusClass = row.status.includes('Rejected') ? 'rejected' : 'accepted';
-
-        tr.innerHTML = `
-            <td>${row.id}</td>
-            <td>${row.date}</td>
-            <td>${row.type}</td>
-            <td>${row.diag}</td>
-            <td>${row.conf}</td>
-            <td><span class="status-pill ${statusClass}">${row.status}</span></td>
-        `;
-        tableBody.appendChild(tr);
-    });
-}
+// Initialize App
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = new DashboardController();
+});
