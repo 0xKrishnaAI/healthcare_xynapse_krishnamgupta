@@ -14,6 +14,8 @@ import {
 import { useApp } from '../context/AppContext';
 import { simulatePreprocessing, simulatePipeline, fetchInferenceResult } from '../utils/api';
 import { pageVariants, cardVariants, fadeInUp } from '../utils/animations';
+import { useReactToPrint } from 'react-to-print';
+import { ReportModal, PrintLayout } from './ReportComponents';
 
 // --- Chart Components ---
 
@@ -254,6 +256,15 @@ const Dashboard = () => {
     const { state, dispatch } = useApp();
     const fileInputRef = useRef(null);
     const [dragActive, setDragActive] = useState(false);
+
+    // --- Report & Print State ---
+    const [showReport, setShowReport] = useState(false);
+    const componentRef = useRef();
+
+    const handlePrint = useReactToPrint({
+        content: () => componentRef.current,
+        documentTitle: `NeuroDx-Report-${state.result?.label || 'Analysis'}`,
+    });
 
     // --- Actions ---
     const handleDrag = (e) => {
@@ -532,10 +543,16 @@ const Dashboard = () => {
 
                                 {/* Actions */}
                                 <div className="p-4 bg-gray-50/50 flex gap-3 border-t border-gray-100">
-                                    <button className="flex-1 btn-primary text-sm shadow-lg shadow-blue-500/20">
+                                    <button
+                                        onClick={() => setShowReport(true)}
+                                        className="flex-1 btn-primary text-sm shadow-lg shadow-blue-500/20"
+                                    >
                                         View Full Report
                                     </button>
-                                    <button className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm">
+                                    <button
+                                        onClick={handlePrint}
+                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm"
+                                    >
                                         <FontAwesomeIcon icon={faFilePdf} />
                                     </button>
                                 </div>
@@ -543,6 +560,21 @@ const Dashboard = () => {
                         )
                     }
                 </AnimatePresence >
+
+                {/* --- Report Components --- */}
+                <ReportModal
+                    isOpen={showReport}
+                    onClose={() => setShowReport(false)}
+                    result={state.result}
+                    onPrint={handlePrint}
+                />
+                <div style={{ display: 'none' }}>
+                    <PrintLayout
+                        ref={componentRef}
+                        result={state.result}
+                        date={new Date().toLocaleDateString()}
+                    />
+                </div>
 
             </div >
         </motion.div >

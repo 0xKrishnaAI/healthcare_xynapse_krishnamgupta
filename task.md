@@ -114,12 +114,12 @@
 - [x] **Verification**: Ensure UI adapts to CN vs AD results correctly.
 
 # Task 12: Vercel Deployment (Priority)
-- [ ] **Configuration**:
-    - [ ] Create `vercel.json` for SPA routing.
-    - [ ] Verify `package.json` build scripts.
-- [ ] **Deployment**:
-    - [ ] Push latest changes to GitHub.
-    - [ ] Connect/Trigger Vercel deployment (User Action).
+- [x] **Configuration**:
+    - [x] Create `vercel.json` for SPA routing.
+    - [x] Verify `package.json` build scripts.
+- [x] **Deployment**:
+    - [x] Push latest changes to GitHub (Volumetric Brain Update).
+    - [x] Connect/Trigger Vercel deployment (User Action).
 
 # Task 13: Anatomical Visualization Upgrade (User Request)
 - [ ] **Shape Refinement**:
@@ -136,6 +136,15 @@
 - [x] **Interactive Annotations**:
     - [x] Add 3D Floating Labels (`<Html>`) pointing to diagnosis items (e.g., "Hippocampal Atrophy").
     - [x] Show specific "Damage Report" when hovering over affected lobes.
+
+# Task 15: Implementing Report Actions (User Request)
+- [x] **View Full Report**:
+    - [x] Create `ReportModal` component with detailed medical data & graphs.
+    - [x] Implement `onClick` handler to open modal.
+- [x] **PDF Export**:
+    - [x] Install `react-to-print` for client-side PDF/Print generation.
+    - [x] Create `PrintReport` component (hidden from view, used for print layout).
+    - [x] Wire up PDF button to trigger print action.
 
 # Task 10: Gemini AI Integration (User Request)
 - [ ] **Setup & Configuration**:
