@@ -14,6 +14,7 @@ const initialState = {
     processStep: 0, // 0-100
     processStatus: '',
     result: null, // { diagnosis: 'MCI', confidence: 0.85, ... }
+    records: [], // Patient history
 };
 
 // Reducer

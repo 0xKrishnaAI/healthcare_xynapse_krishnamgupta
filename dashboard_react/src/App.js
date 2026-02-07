@@ -1,6 +1,7 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
+import { AnimatePresence } from 'framer-motion';
 
 // Layout Components
 import Sidebar from './components/Sidebar';
@@ -14,6 +15,23 @@ import SOS from './components/SOS';
 import Settings from './components/Settings';
 import Help from './components/Help';
 
+const AnimatedRoutes = () => {
+    const location = useLocation();
+
+    return (
+        <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/records" element={<Records />} />
+                <Route path="/sos" element={<SOS />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/help" element={<Help />} />
+            </Routes>
+        </AnimatePresence>
+    );
+};
+
 function App() {
     return (
         <AppProvider>
@@ -26,20 +44,13 @@ function App() {
 
                     <Sidebar />
 
-                    <div className="flex-1 flex flex-col md:ml-72 transition-all duration-300 h-full">
+                    <div className="flex-1 flex flex-col md:ml-72 transition-all duration-300 h-full relative z-10">
                         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth">
                             <Header />
 
                             {/* Main Content Area */}
-                            <main className="max-w-7xl mx-auto pb-10">
-                                <Routes>
-                                    <Route path="/" element={<Dashboard />} />
-                                    <Route path="/reports" element={<Reports />} />
-                                    <Route path="/records" element={<Records />} />
-                                    <Route path="/sos" element={<SOS />} />
-                                    <Route path="/settings" element={<Settings />} />
-                                    <Route path="/help" element={<Help />} />
-                                </Routes>
+                            <main className="max-w-7xl mx-auto pb-10 min-h-[calc(100vh-140px)]">
+                                <AnimatedRoutes />
                             </main>
                         </div>
                     </div>
