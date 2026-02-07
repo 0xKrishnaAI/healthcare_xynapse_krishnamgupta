@@ -74,5 +74,35 @@ These are technical improvements that would boost performance *if* the data issu
 | **MEDIUM** | **Cross-Validation:** Implement 5-Fold validation for robust metrics. | **Reliable Evaluation** |
 | **LOW** | **Advanced Augmentation:** Add elastic deformations and bias field noise. | **+5% Robustness** |
 
+## 💡 4. HOW TO SOLVE DATA STARVATION (ACTION PLAN)
+
+To fix the "Critical Failure" in model accuracy, you must implement one or more of these strategies:
+
+### **A. Acquire Open-Source Medical Datasets (Best Solution)**
+The most effective fix is simply getting more real brains to train on.
+- **ADNI (Alzheimer's Disease Neuroimaging Initiative):** Contains ~2,000+ MRI scans.
+- **OASIS (Open Access Series of Imaging Studies):** Contains ~1,000+ MRI scans.
+- **AIBL (Australian Imaging, Biomarker and Lifestyle):** Large longitudinal dataset.
+**Impact:** Increasing training data from 70 to 700+ scans will likely boost accuracy to **80-90%**.
+
+### **B. Advanced Data Augmentation (The "Free Data" Fix)**
+If you cannot get more real data, you must hallucinate new variations of existing data.
+- **Elastic Deformation:** Warping variable parts of the brain (ventricles) to simulate different anatomies.
+- **Bias Field Modeling:** Simulating MRI magnetic field inhomogeneities.
+- **Ghosting & Noise:** Adding Rician noise common in MRI.
+- **MixUp / CutMix:** Blending two brain images together to force the model to learn features, not memorization.
+**Impact:** Can boost accuracy by **10-15%** by preventing overfitting.
+
+### **C. Transfer Learning (The "Knowledge" Fix)**
+Instead of training from scratch (random weights), start with a model that already knows what a brain looks like.
+- **MedicalNet:** A ResNet pre-trained on 23 medical datasets (lungs, brains, abdomen).
+- **Fine-Tuning:** Freeze the feature extraction layers and only train the final classification layer.
+**Impact:** Allows models to learn from as few as 100-200 images by leveraging prior knowledge.
+
+### **D. Few-Shot Learning / Siamsese Networks**
+- Treat the problem as a similarity task: "Is this brain more like a healthy brain or an AD brain?"
+- Networks: **Siamese Networks** or **Prototypical Networks**.
+**Impact:** Specifically designed for extreme low-data regimes.
+
 ---
-**Verdict:** The codebase is engineered correctly (100% compliant pipeline), but the **project failed scientifically due to data starvation**. No algorithm can learn complex neurology from 28 examples.
+**Verdict:** The codebase is engineered correctly (100% compliant pipeline), but the **project failed scientifically due to data starvation**. No algorithm can learn complex neurology from 28 examples without the solutions above.
