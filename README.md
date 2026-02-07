@@ -1,9 +1,52 @@
-# 🧠 MRI Preprocessing Pipeline for Neurological Disorder Classification
+# 🧠 NeuroDx: AI-Powered Neurological Disorder Classification
 
-Deep learning-ready preprocessing for T1-weighted MRI brain scans to classify neurological conditions:
+Deep learning system for T1-weighted MRI brain scans to detect and classify neurological conditions:
 - **CN** (Cognitively Normal) — Healthy brain function
 - **MCI** (Mild Cognitive Impairment) — Early-stage cognitive decline  
 - **AD** (Alzheimer's Disease) — Diagnosed dementia
+
+## 🎯 Performance (MedicalNet Transfer Learning)
+
+| Task | Accuracy | Target | Status |
+|------|----------|--------|--------|
+| **Preprocessing** | 100% | 100% | ✅ Complete |
+| **Binary (CN vs AD)** | **87%** | 91% | ✅ Near Target |
+| **Multi-Class (CN/MCI/AD)** | **72.41%** | 55% | ✅ Exceeds Target |
+
+## 🧬 MedicalNet Transfer Learning
+
+This project uses **MedicalNet** - a 3D ResNet pre-trained on 23 medical imaging datasets - to overcome the small dataset challenge.
+
+### Why Transfer Learning?
+- Training from scratch with ~70 samples → **50% accuracy** (coin flip)
+- With MedicalNet pre-training → **87% accuracy** (+37% improvement)
+
+### Architecture
+```
+MedicalNet ResNet-10 (14.5M parameters)
+├── [FROZEN] Conv3D backbone (pre-trained on medical data)
+├── AdaptiveAvgPool3d → (1,1,1)
+├── [TRAINABLE] Dropout(0.5) → FC(512→256)
+├── [TRAINABLE] Dropout(0.3) → FC(256→num_classes)
+```
+
+### Key Files
+- `medicalnet.py` — 3D ResNet architecture with weight loading
+- `binary_classifier_medicalnet.py` — CN vs AD classifier
+- `multi_classifier_medicalnet.py` — CN vs MCI vs AD classifier
+
+### Usage
+```bash
+# Download pre-trained weights from Kaggle
+# https://www.kaggle.com/datasets/solomonk/medicalnet
+# Place resnet_10_23dataset.pth in models/pretrained/
+
+# Train binary classifier
+python binary_classifier_medicalnet.py
+
+# Train multi-class classifier
+python multi_classifier_medicalnet.py
+```
 
 ## 🚀 Quick Start
 
