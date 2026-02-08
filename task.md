@@ -156,3 +156,12 @@
 - [ ] **UI Integration**:
     - [ ] Add "Ask AI Assistant" or "Generate Report" button in `DiseaseInfo`.
     - [ ] Display AI-generated insights and images.
+
+# Task 16: Vercel Deployment (Execution) ✅ COMPLETE
+- [x] **Preparation**:
+    - [x] Verify local build success.
+    - [x] Install `vercel` CLI (if needed) or configure for GitHub deployment.
+- [x] **Deployment**:
+    - [x] Deploy to Vercel via CLI.
+    - [x] Verify deployment URL: [Live Dashboard](https://dashboard-react-pi-mauve.vercel.app)
+    - [x] Check for runtime errors (logs).
