@@ -102,6 +102,9 @@
 - Early stopping prevented overfitting
 - Validation accuracy stable after epoch 15
 
+![Training Curves](../02_Deep_Learning_Models/reports/training_curves_multi.png)
+
+
 ---
 
 ## 6. FINAL SYSTEM OUTPUT (ONE-LINE DECISION)

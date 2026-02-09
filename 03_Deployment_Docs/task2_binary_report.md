@@ -86,6 +86,9 @@
 - Learning rate scheduling improved convergence
 - Pre-trained backbone extracted robust medical features
 
+![Training Curves](../02_Deep_Learning_Models/reports/ResNet18_training_curves.png)
+
+
 ---
 
 ## 6. FINAL SYSTEM OUTPUT (ONE-LINE DECISION)
