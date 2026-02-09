@@ -5,6 +5,9 @@ Deep learning system for T1-weighted MRI brain scans to detect and classify neur
 - **MCI** (Mild Cognitive Impairment) — Early-stage cognitive decline  
 - **AD** (Alzheimer's Disease) — Diagnosed dementia
 
+## 🌐 Live Demo
+Experience the AI Dashboard live: [**Launch NeuroDx**](https://dashboard-react-pi-mauve.vercel.app)
+
 ## 🎯 Performance (MedicalNet Transfer Learning)
 
 | Task | Accuracy | Target | Status |

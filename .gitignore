@@ -46,3 +46,4 @@ test.csv
 # Dependencies
 node_modules/
 dashboard_react/node_modules/
+dashboard_react/build/
